@@ -3,92 +3,312 @@
 {% block title %}Upload Files - {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <h1>Upload Files</h1>
-        <p class="lead">Upload your PostgreSQL database dump and SQL queries file to begin benchmarking.</p>
+<div class="container">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h2 mb-0">
+                <i class="bi bi-cloud-upload me-2"></i>
+                Upload Files
+            </h1>
+            <p class="text-muted mb-0">Upload your PostgreSQL database dump and SQL queries file to begin benchmarking</p>
+        </div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="/">Home</a></li>
+                <li class="breadcrumb-item active">Upload Files</li>
+            </ol>
+        </nav>
     </div>
-</div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>Database Dump</h5>
+    <!-- Instructions Card -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center mb-3">
+                <i class="bi bi-info-circle-fill text-primary me-2 fs-4"></i>
+                <h5 class="card-title mb-0">Instructions</h5>
             </div>
-            <div class="card-body">
-                <form hx-post="/upload/dump" 
-                      hx-target="#dump-status" 
-                      hx-encoding="multipart/form-data"
-                      hx-indicator="#dump-loading">
-                    <div class="mb-3">
-                        <label for="dump-file" class="form-label">Select SQL dump file</label>
-                        <input class="form-control" type="file" id="dump-file" name="file" accept=".sql,.dump" required>
-                        <div class="form-text">Accepted formats: .sql, .dump</div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="d-flex align-items-start mb-3">
+                        <div class="badge bg-primary rounded-circle me-2 p-2">1</div>
+                        <div>
+                            <h6 class="mb-1">Database Dump</h6>
+                            <p class="text-muted small mb-0">Upload a PostgreSQL dump file (.sql or .dump) that will be loaded into the database.</p>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">
-                        <span id="dump-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Upload Dump
-                    </button>
-                </form>
-                <div id="dump-status" class="mt-3"></div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>SQL Queries</h5>
-            </div>
-            <div class="card-body">
-                <form hx-post="/upload/queries" 
-                      hx-target="#queries-status" 
-                      hx-encoding="multipart/form-data"
-                      hx-indicator="#queries-loading">
-                    <div class="mb-3">
-                        <label for="queries-file" class="form-label">Select SQL queries file</label>
-                        <input class="form-control" type="file" id="queries-file" name="file" accept=".sql" required>
-                        <div class="form-text">Accepted format: .sql</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="d-flex align-items-start mb-3">
+                        <div class="badge bg-primary rounded-circle me-2 p-2">2</div>
+                        <div>
+                            <h6 class="mb-1">SQL Queries</h6>
+                            <p class="text-muted small mb-0">Upload a file containing SQL queries separated by semicolons. These queries will be benchmarked.</p>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">
-                        <span id="queries-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Upload Queries
-                    </button>
-                </form>
-                <div id="queries-status" class="mt-3"></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="d-flex align-items-start mb-3">
+                        <div class="badge bg-primary rounded-circle me-2 p-2">3</div>
+                        <div>
+                            <h6 class="mb-1">Run Experiments</h6>
+                            <p class="text-muted small mb-0">After uploading both files, proceed to run experiments and analyze the results.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<div class="row mt-4">
-    <div class="col-md-12">
-        <div class="alert alert-info">
-            <h6>Instructions:</h6>
-            <ul class="mb-0">
-                <li><strong>Database Dump:</strong> Upload a PostgreSQL dump file (.sql or .dump) that will be loaded into the database.</li>
-                <li><strong>SQL Queries:</strong> Upload a file containing SQL queries separated by semicolons. These queries will be benchmarked.</li>
-                <li>After uploading both files, you can proceed to <a href="/experiment">run experiments</a>.</li>
-            </ul>
+    <div class="row g-4">
+        <!-- Database Dump Upload -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-database me-2 text-primary"></i>
+                        <h5 class="card-title mb-0">Database Dump</h5>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form hx-post="/upload/dump" 
+                          hx-target="#dump-status" 
+                          hx-encoding="multipart/form-data"
+                          hx-indicator="#dump-loading"
+                          class="needs-validation"
+                          novalidate>
+                        <div class="mb-4">
+                            <label for="dump-file" class="form-label">Select SQL dump file</label>
+                            <div class="input-group">
+                                <input class="form-control" type="file" id="dump-file" name="file" 
+                                       accept=".sql,.dump" required
+                                       data-browse="Choose file">
+                                <label class="input-group-text" for="dump-file">
+                                    <i class="bi bi-upload"></i>
+                                </label>
+                            </div>
+                            <div class="form-text">Accepted formats: .sql, .dump</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <span id="dump-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" 
+                                  role="status" aria-hidden="true"></span>
+                            <i class="bi bi-cloud-arrow-up me-1"></i>
+                            Upload Database Dump
+                        </button>
+                    </form>
+                    <div id="dump-status" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SQL Queries Upload -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-file-earmark-code me-2 text-primary"></i>
+                        <h5 class="card-title mb-0">SQL Queries</h5>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form hx-post="/upload/queries" 
+                          hx-target="#queries-status" 
+                          hx-encoding="multipart/form-data"
+                          hx-indicator="#queries-loading"
+                          class="needs-validation"
+                          novalidate>
+                        <div class="mb-4">
+                            <label for="queries-file" class="form-label">Select SQL queries file</label>
+                            <div class="input-group">
+                                <input class="form-control" type="file" id="queries-file" name="file" 
+                                       accept=".sql" required
+                                       data-browse="Choose file">
+                                <label class="input-group-text" for="queries-file">
+                                    <i class="bi bi-upload"></i>
+                                </label>
+                            </div>
+                            <div class="form-text">Accepted format: .sql</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <span id="queries-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" 
+                                  role="status" aria-hidden="true"></span>
+                            <i class="bi bi-cloud-arrow-up me-1"></i>
+                            Upload SQL Queries
+                        </button>
+                    </form>
+                    <div id="queries-status" class="mt-3"></div>
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<div class="row mt-3">
-    <div class="col-md-12">
-        <a href="/experiment" class="btn btn-success">Proceed to Experiments →</a>
+    <!-- Next Steps -->
+    <div class="card shadow-sm mt-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-arrow-right-circle-fill text-success me-2 fs-4"></i>
+                    <h5 class="card-title mb-0">Ready to proceed?</h5>
+                </div>
+                <a href="/experiment" class="btn btn-success">
+                    <i class="bi bi-play-circle me-1"></i>
+                    Run Experiments
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script>
+// Form validation
+document.addEventListener('DOMContentLoaded', function() {
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.from(forms).forEach(form => {
+        form.addEventListener('submit', event => {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
+
+    // Custom file input styling
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    fileInputs.forEach(input => {
+        input.addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || 'No file chosen';
+            const label = e.target.nextElementSibling;
+            if (label) {
+                label.textContent = fileName;
+            }
+        });
+    });
+});
+</script>
+
 <style>
+.card {
+    border: none;
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.badge.rounded-circle {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+}
+
+.input-group-text {
+    background-color: #f8f9fa;
+    border-color: #ced4da;
+    cursor: pointer;
+}
+
+.input-group-text:hover {
+    background-color: #e9ecef;
+}
+
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.btn {
+    transition: all 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
 .htmx-indicator {
     display: none;
 }
+
 .htmx-request .htmx-indicator {
     display: inline-block;
+}
+
+.breadcrumb {
+    background: transparent;
+    margin: 0;
+    padding: 0;
+}
+
+.breadcrumb-item a {
+    color: #6c757d;
+    text-decoration: none;
+}
+
+.breadcrumb-item a:hover {
+    color: #0d6efd;
+    text-decoration: underline;
+}
+
+/* Custom file input styling */
+input[type="file"] {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: calc(1.5em + 0.75rem + 2px);
+    margin: 0;
+    opacity: 0;
+}
+
+.input-group {
+    position: relative;
+}
+
+.input-group input[type="file"] {
+    cursor: pointer;
+}
+
+.input-group label.input-group-text {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    color: #6c757d;
+    background-color: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.input-group .form-control[type="file"] {
+    padding-right: 100px;
+}
+
+/* Status message styling */
+#dump-status, #queries-status {
+    transition: all 0.3s ease;
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+.alert-success {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #842029;
 }
 </style>
 {% endblock %} 

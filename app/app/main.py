@@ -37,10 +37,27 @@ app.include_router(results.router, tags=["results"])
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Home page with navigation."""
-    return templates.TemplateResponse("base.html", {
+    """Home page with navigation and status information."""
+    from sqlmodel import Session, select
+    from .database import engine
+    from .models import Experiment
+
+    # Get experiment count
+    with Session(engine) as session:
+        experiment_count = session.exec(select(Experiment)).all().__len__()
+
+    # Check for uploaded files
+    import os
+    uploads_dir = "app/uploads"
+    dump_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql')]
+    query_files = [f for f in os.listdir(uploads_dir) if f.endswith('.txt')]
+
+    return templates.TemplateResponse("home.html", {
         "request": request,
-        "show_navigation": True
+        "show_navigation": True,
+        "has_dump": len(dump_files) > 0,
+        "has_queries": len(query_files) > 0,
+        "experiment_count": experiment_count
     })
 
 
