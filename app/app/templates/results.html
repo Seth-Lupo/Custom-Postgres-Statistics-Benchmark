@@ -84,11 +84,9 @@
                                 {{ experiment.created_at.strftime('%Y-%m-%d %H:%M') }}
                             </td>
                             <td class="align-middle">
-                                <button class="btn btn-sm btn-outline-primary" 
-                                        hx-get="/results/{{ experiment.id }}/table" 
-                                        hx-target="#details-{{ experiment.id }}"
-                                        hx-swap="innerHTML show:top"
-                                        hx-indicator="#loading-indicator-{{ experiment.id }}">
+                                <a class="btn btn-sm btn-outline-primary" 
+                                   href="/results/{{ experiment.id }}" 
+                                   target="_blank">
                                     <span id="loading-indicator-{{ experiment.id }}" 
                                           class="spinner-border spinner-border-sm me-1 htmx-indicator" 
                                           role="status">
@@ -106,44 +104,6 @@
                         {% endfor %}
                     </tbody>
                 </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Selected Experiment Details -->
-    <div id="experiment-details" class="card shadow-sm mt-4" style="display: none;">
-        <div class="card-header bg-white py-3">
-            <h5 class="card-title mb-0">Experiment Details</h5>
-        </div>
-        <div class="card-body">
-            <div id="details-content"></div>
-        </div>
-    </div>
-
-    <!-- Chart Controls -->
-    <div id="chart-controls" class="card shadow-sm mt-4" style="display: none;">
-        <div class="card-header bg-white py-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Visualization</h5>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="chart-bar">
-                        <i class="bi bi-bar-chart me-1"></i>
-                        Bar Chart
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="chart-line">
-                        <i class="bi bi-graph-up me-1"></i>
-                        Line Chart
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="chart-histogram">
-                        <i class="bi bi-distribute-vertical me-1"></i>
-                        Histogram
-                    </button>
-                </div>
-            </div>
-        </div>
-        <div class="card-body">
-            <div id="chart-container" class="chart-container">
-                <!-- Chart will be loaded here -->
             </div>
         </div>
     </div>
@@ -167,59 +127,6 @@
 
 {% block scripts %}
 <script>
-// Show/hide experiment details
-function showExperimentDetails(experimentId) {
-    // Smooth scroll to details
-    const detailsCard = document.getElementById('experiment-details');
-    detailsCard.style.display = 'block';
-    detailsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    
-    // Show chart controls
-    const chartControls = document.getElementById('chart-controls');
-    chartControls.style.display = 'block';
-    
-    // Set up chart buttons
-    const chartButtons = document.querySelectorAll('#chart-controls .btn-group .btn');
-    chartButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const chartType = this.id.replace('chart-', '');
-            loadChart(experimentId, chartType);
-            
-            // Update active button
-            chartButtons.forEach(b => {
-                b.classList.remove('active', 'btn-primary');
-                b.classList.add('btn-outline-primary');
-            });
-            this.classList.remove('btn-outline-primary');
-            this.classList.add('active', 'btn-primary');
-        });
-    });
-    
-    // Load default chart
-    loadChart(experimentId, 'bar');
-    const barButton = document.getElementById('chart-bar');
-    barButton.classList.remove('btn-outline-primary');
-    barButton.classList.add('active', 'btn-primary');
-}
-
-function loadChart(experimentId, chartType) {
-    const container = document.getElementById('chart-container');
-    
-    // Add loading indicator
-    container.innerHTML = `
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="text-muted mt-2">Loading chart...</p>
-        </div>
-    `;
-    
-    htmx.ajax('GET', `/results/${experimentId}/chart?type=${chartType}`, {
-        target: '#chart-container',
-        swap: 'innerHTML'
-    });
-}
 
 // Handle experiment details loading
 document.addEventListener('htmx:afterSwap', function(event) {

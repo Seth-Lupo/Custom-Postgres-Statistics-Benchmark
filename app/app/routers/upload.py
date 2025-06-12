@@ -22,9 +22,9 @@ async def upload_dump(file: UploadFile = File(...)):
     """Handle database dump file upload."""
     try:
         if not file.filename.endswith(('.sql', '.dump')):
-            return """<div id="dump-status" class="alert alert-danger">
+            return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
                 <strong>Error!</strong> Only .sql and .dump files are allowed.
-            </div>"""
+            </div>""")
         
         # Save the uploaded file
         file_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -32,13 +32,13 @@ async def upload_dump(file: UploadFile = File(...)):
             content = await file.read()
             buffer.write(content)
         
-        return f"""<div id="dump-status" class="alert alert-success">
+        return HTMLResponse(f"""<div id="dump-status" class="alert alert-success">
             <strong>Success!</strong> Database dump uploaded successfully: {file.filename}
-        </div>"""
+        </div>""")
     except Exception as e:
-        return f"""<div id="dump-status" class="alert alert-danger">
+        return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload file: {str(e)}
-        </div>"""
+        </div>""")
 
 
 @router.post("/upload/queries")
@@ -46,9 +46,9 @@ async def upload_queries(file: UploadFile = File(...)):
     """Handle queries file upload."""
     try:
         if not file.filename.endswith('.sql'):
-            return """<div id="queries-status" class="alert alert-danger">
+            return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
                 <strong>Error!</strong> Only .sql files are allowed.
-            </div>"""
+            </div>""")
         
         # Save the uploaded file
         file_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -56,10 +56,10 @@ async def upload_queries(file: UploadFile = File(...)):
             content = await file.read()
             buffer.write(content)
         
-        return f"""<div id="queries-status" class="alert alert-success">
+        return HTMLResponse(f"""<div id="queries-status" class="alert alert-success">
             <strong>Success!</strong> Queries file uploaded successfully: {file.filename}
-        </div>"""
+        </div>""")
     except Exception as e:
-        return f"""<div id="queries-status" class="alert alert-danger">
+        return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload file: {str(e)}
-        </div>""" 
+        </div>""") 

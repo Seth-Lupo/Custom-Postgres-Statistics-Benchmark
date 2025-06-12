@@ -16,15 +16,7 @@
             </ol>
         </nav>
     </div>
-    
-    {% if not queries_available %}
-    <div class="alert alert-warning d-flex align-items-center" role="alert">
-        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        <div>
-            <strong>No queries file uploaded!</strong> Please <a href="/upload" class="alert-link">upload your queries</a> first.
-        </div>
-    </div>
-    {% else %}
+
     <div class="card shadow-sm">
         <div class="card-header bg-white py-3">
             <h5 class="card-title mb-0">Configure Experiment</h5>
@@ -43,24 +35,51 @@
                             Statistics Source
                         </label>
                         <select class="form-select" id="stats_source" name="stats_source" required>
+                            <option value="" disabled selected>Select a statistics source</option>
                             {% for key, name in stats_sources %}
                             <option value="{{ key }}">{{ name }}</option>
                             {% endfor %}
                         </select>
                         <div class="form-text">Choose the statistics source to use for query planning</div>
                     </div>
-                    
                     <div class="col-md-6 mb-3">
                         <label for="iterations" class="form-label">
                             <i class="bi bi-arrow-repeat me-1"></i>
                             Number of Iterations
                         </label>
                         <div class="input-group">
-                            <input type="number" class="form-control" id="iterations" name="iterations" 
-                                   value="10" min="1" max="100" required>
+                            <input type="number" class="form-control" id="iterations" name="iterations" value="10" min="1" max="10000" required>
                             <span class="input-group-text">times</span>
                         </div>
-                        <div class="form-text">How many times to run each query (1-100)</div>
+                        <div class="form-text">How many times to run each query (1-10000)</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="dump_file" class="form-label">
+                            <i class="bi bi-database-fill me-1"></i>
+                            Database Dump File
+                        </label>
+                        <select class="form-select" id="dump_file" name="dump_file" required>
+                            <option value="" disabled selected>Select a dump file</option>
+                            {% for file in dump_files %}
+                            <option value="{{ file }}">{{ file }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose the database dump to restore before running the experiment</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="query_file" class="form-label">
+                            <i class="bi bi-file-earmark-code me-1"></i>
+                            Query File
+                        </label>
+                        <select class="form-select" id="query_file" name="query_file" required>
+                            <option value="" disabled selected>Select a query file</option>
+                            {% for file in query_files %}
+                            <option value="{{ file }}">{{ file }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose the SQL queries file to benchmark</div>
                     </div>
                 </div>
                 
@@ -75,13 +94,43 @@
         </div>
     </div>
     
-    <div id="experiment-container" class="mt-4"></div>
-    {% endif %}
+    <div id="experiment-container" class="mt-4">
+        {% if experiment_id %}
+        <div id="experiment-result">
+            <div class="alert alert-info">
+                <strong>Experiment Started!</strong> Running {{ iterations }} iterations with {{ stats_source }}...<br>
+                <span class="text-muted">Dump: {{ dump_file }} | Query: {{ query_file }}</span>
+            </div>
+            <div class="progress mb-3">
+                <div class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Experiment Progress</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary active" onclick="setLogLevel('info', this)">Info</button>
+                        <button type="button" class="btn btn-outline-warning" onclick="setLogLevel('warning', this)">Warnings</button>
+                        <button type="button" class="btn btn-outline-danger" onclick="setLogLevel('error', this)">Errors</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <pre id="progress-log" style="height: 300px; overflow-y: auto;" class="mb-0 bg-light p-3"></pre>
+                    <div hx-sse="connect:/experiment/stream/{{ experiment_id }}" style="display: none;">
+                        <div hx-sse="swap:message" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        {% endif %}
+    </div>
+    
 </div>
 
 <script>
 let currentLogLevel = 'info';
 let logHistory = [];
+let streamClosed = false;
 
 function setLogLevel(level, button) {
     currentLogLevel = level;
@@ -95,7 +144,7 @@ function setLogLevel(level, button) {
     button.classList.add('active', 'btn-secondary');
     
     // Filter and display logs
-    const logElement = document.querySelector('pre[id^="progress-log-"]');
+    const logElement = document.querySelector('pre[id^="progress-log"]');
     if (logElement) {
         logElement.innerHTML = filterLogs(logHistory);
         logElement.scrollTop = logElement.scrollHeight;
@@ -140,7 +189,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // HTMX event handling
 document.addEventListener('htmx:sseMessage', function(event) {
-    const data = JSON.parse(event.detail.message);
+    if (streamClosed) return;
+    
+    const data = JSON.parse(event.detail.data);
     
     // Update progress bar
     if (data.progress !== undefined) {
@@ -163,8 +214,8 @@ document.addEventListener('htmx:sseMessage', function(event) {
     }
     
     // Update messages log
-    if (data.messages) {
-        const logElement = document.querySelector('pre[id^="progress-log-"]');
+    if (data.messages && data.html) {
+        const logElement = document.querySelector('pre[id^="progress-log"]');
         if (logElement) {
             data.messages.forEach(message => {
                 const timestamp = formatTimestamp();
@@ -172,24 +223,53 @@ document.addEventListener('htmx:sseMessage', function(event) {
                 logHistory.push(logEntry);
             });
             
-            logElement.innerHTML = filterLogs(logHistory);
+            // Display filtered logs with HTML formatting
+            const filteredLogs = filterLogs(logHistory);
+            logElement.innerHTML = filteredLogs;
+            
+            // Append the new HTML message at the bottom
+            if (data.html) {
+                logElement.innerHTML += '\n' + data.html;
+            }
+            
             logElement.scrollTop = logElement.scrollHeight;
         }
     }
     
     // Handle completion or error
-    if (data.html) {
-        const container = document.querySelector('#experiment-container');
+    if (data.status === 'completed' || data.status === 'error') {
+        streamClosed = true;
+        const container = document.querySelector('#experiment-result');
         if (container) {
-            container.innerHTML = data.html;
-            // Smooth scroll to results
-            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Insert the completion/error message at the top while keeping the progress display
+            const alertDiv = document.createElement('div');
+            alertDiv.innerHTML = data.html;
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            // If it's a completion message, scroll to the "View Results" button
+            if (data.status === 'completed') {
+                const viewResultsBtn = alertDiv.querySelector('.btn-primary');
+                if (viewResultsBtn) {
+                    viewResultsBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            
+            // Close the SSE connection
+            const source = event.detail.sse;
+            if (source) {
+                source.close();
+            }
         }
     }
 });
 </script>
 
 <style>
+
+[hx-sse] {
+    display: none;
+}
+
 .htmx-indicator {
     display: none;
 }

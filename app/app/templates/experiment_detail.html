@@ -123,19 +123,19 @@
                         </div>
                         <div class="btn-group" role="group">
                             <button type="button" class="btn btn-sm btn-outline-primary active" 
-                                    hx-get="/results/{{ experiment.id }}/chart?type=bar" 
+                                    hx-get="/results/{{ experiment.id }}/chart?chart_type=bar" 
                                     hx-target="#chart-container">
                                 <i class="bi bi-bar-chart me-1"></i>
                                 Bar Chart
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-primary" 
-                                    hx-get="/results/{{ experiment.id }}/chart?type=line" 
+                                    hx-get="/results/{{ experiment.id }}/chart?chart_type=line" 
                                     hx-target="#chart-container">
                                 <i class="bi bi-graph-up me-1"></i>
                                 Line Chart
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-primary" 
-                                    hx-get="/results/{{ experiment.id }}/chart?type=histogram" 
+                                    hx-get="/results/{{ experiment.id }}/chart?chart_type=histogram" 
                                     hx-target="#chart-container">
                                 <i class="bi bi-distribute-vertical me-1"></i>
                                 Histogram

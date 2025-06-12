@@ -100,6 +100,8 @@ def generate_chart(experiment: Experiment, trials: list, chart_type: str) -> str
     
     execution_times = [trial.execution_time for trial in trials]
     trial_numbers = [trial.run_index for trial in trials]
+
+    print(chart_type)
     
     if chart_type == "bar":
         plt.bar(trial_numbers, execution_times)
