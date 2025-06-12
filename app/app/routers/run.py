@@ -10,8 +10,11 @@ from ..experiment import ExperimentRunner, ExperimentError
 from ..logging_config import web_logger
 from fastapi.exception_handlers import RequestValidationError
 from fastapi.exceptions import RequestValidationError
+<<<<<<< HEAD
 from sqlmodel import select
 from ..models import Experiment as ExperimentModel
+=======
+>>>>>>> 1144569 (important checkpoint)
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
@@ -30,6 +33,7 @@ async def experiment_page(request: Request):
     stats_sources = experiment_runner.get_available_stats_sources()
 
     # List available dump and query files
+<<<<<<< HEAD
     uploads_dir = "app/uploads"
     dumps_dir = os.path.join(uploads_dir, "dumps")
     queries_dir = os.path.join(uploads_dir, "queries")
@@ -38,6 +42,11 @@ async def experiment_page(request: Request):
     query_files = [f for f in os.listdir(queries_dir) if f.endswith('.sql')]
 
    
+=======
+    uploads_dir = "app/app/uploads"
+    dump_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql') or f.endswith('.dump')]
+    query_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql')]
+>>>>>>> 1144569 (important checkpoint)
 
     queries_not_available = len(query_files) == 0
     return templates.TemplateResponse("experiment.html", {
@@ -58,6 +67,7 @@ async def run_experiment(
     iterations: int = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
+<<<<<<< HEAD
     session: AsyncSession = Depends(get_session)
 ):
     """Launch an experiment in the background with selected files."""
@@ -81,6 +91,17 @@ async def run_experiment(
         uploads_dir = "app/uploads"
         dump_path = os.path.join(uploads_dir, "dumps", dump_file)
         query_path = os.path.join(uploads_dir, "queries", query_file)
+=======
+    session: Session = Depends(get_session)
+):
+    """Launch an experiment in the background with selected files."""
+    try:
+        web_logger.info(f"Starting experiment with {stats_source} source, {iterations} iterations, dump {dump_file}, query {query_file}")
+
+        uploads_dir = "app/app/uploads"
+        dump_path = os.path.join(uploads_dir, dump_file)
+        query_path = os.path.join(uploads_dir, query_file)
+>>>>>>> 1144569 (important checkpoint)
 
         # Validate files exist
         if not os.path.exists(dump_path):
@@ -128,16 +149,27 @@ async def run_experiment(
             "total": iterations,
             "messages": [],
             "log_level": "info",
+<<<<<<< HEAD
             "experiment": None,
             "name": experiment_name
         }
         web_logger.info(f"Created experiment with ID {experiment_id}")
         background_tasks.add_task(run_experiment_background, experiment_id, stats_source, query, iterations, dump_path, experiment_name, session)
+=======
+            "experiment": None
+        }
+        web_logger.info(f"Created experiment with ID {experiment_id}")
+        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, query, iterations)
+>>>>>>> 1144569 (important checkpoint)
         return HTMLResponse(f"""
         <div id=\"experiment-result\">
             <div class=\"alert alert-info\">
                 <strong>Experiment Started!</strong> Running {iterations} iterations with {stats_source}...<br>
+<<<<<<< HEAD
                 <span class=\"text-muted\">Name: {experiment_name} | Dump: {dump_file} | Query: {query_file}</span>
+=======
+                <span class=\"text-muted\">Dump: {dump_file} | Query: {query_file}</span>
+>>>>>>> 1144569 (important checkpoint)
             </div>
             <div class=\"progress mb-3\">
                 <div class=\"progress-bar\" role=\"progressbar\" style=\"width: 0%\" id=\"progress-bar-{experiment_id}\">0%</div>

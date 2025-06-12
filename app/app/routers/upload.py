@@ -70,8 +70,15 @@ async def upload_page(request: Request):
 async def upload_dump(files: List[UploadFile] = File(...)):
     """Handle database dump files upload."""
     try:
+<<<<<<< HEAD
         uploaded_files = []
         errors = []
+=======
+        if not file.filename.endswith(('.sql', '.dump')):
+            return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
+                <strong>Error!</strong> Only .sql and .dump files are allowed.
+            </div>""")
+>>>>>>> 1144569 (important checkpoint)
         
         for file in files:
             if not file.filename.endswith(('.sql', '.dump')):
@@ -88,6 +95,7 @@ async def upload_dump(files: List[UploadFile] = File(...)):
             file_info["formatted_size"] = format_file_size(file_info["size"])
             uploaded_files.append(file_info)
         
+<<<<<<< HEAD
         if errors:
             return HTMLResponse(f"""<div id="dump-status" class="alert alert-warning">
                 <strong>Warning!</strong><br>
@@ -131,6 +139,14 @@ async def upload_dump(files: List[UploadFile] = File(...)):
     except Exception as e:
         return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload files: {str(e)}
+=======
+        return HTMLResponse(f"""<div id="dump-status" class="alert alert-success">
+            <strong>Success!</strong> Database dump uploaded successfully: {file.filename}
+        </div>""")
+    except Exception as e:
+        return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
+            <strong>Error!</strong> Failed to upload file: {str(e)}
+>>>>>>> 1144569 (important checkpoint)
         </div>""")
 
 
@@ -138,8 +154,15 @@ async def upload_dump(files: List[UploadFile] = File(...)):
 async def upload_queries(files: List[UploadFile] = File(...)):
     """Handle queries files upload."""
     try:
+<<<<<<< HEAD
         uploaded_files = []
         errors = []
+=======
+        if not file.filename.endswith('.sql'):
+            return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
+                <strong>Error!</strong> Only .sql files are allowed.
+            </div>""")
+>>>>>>> 1144569 (important checkpoint)
         
         for file in files:
             if not file.filename.endswith('.sql'):
@@ -156,6 +179,7 @@ async def upload_queries(files: List[UploadFile] = File(...)):
             file_info["formatted_size"] = format_file_size(file_info["size"])
             uploaded_files.append(file_info)
         
+<<<<<<< HEAD
         if errors:
             return HTMLResponse(f"""<div id="queries-status" class="alert alert-warning">
                 <strong>Warning!</strong><br>
@@ -199,4 +223,12 @@ async def upload_queries(files: List[UploadFile] = File(...)):
     except Exception as e:
         return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload files: {str(e)}
+=======
+        return HTMLResponse(f"""<div id="queries-status" class="alert alert-success">
+            <strong>Success!</strong> Queries file uploaded successfully: {file.filename}
+        </div>""")
+    except Exception as e:
+        return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
+            <strong>Error!</strong> Failed to upload file: {str(e)}
+>>>>>>> 1144569 (important checkpoint)
         </div>""") 
