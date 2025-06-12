@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Experiment {{ experiment.id }} - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/results">Results</a></li>
+                <li class="breadcrumb-item active">Experiment {{ experiment.id }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <h1>Experiment {{ experiment.id }}</h1>
+        <p class="lead">Detailed results for experiment using {{ experiment.stats_source }}</p>
+    </div>
+</div>
+
+<!-- Experiment Summary -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Experiment Summary</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless">
+                    <tr>
+                        <th>Statistics Source:</th>
+                        <td>{{ experiment.stats_source }}</td>
+                    </tr>
+                    <tr>
+                        <th>Total Iterations:</th>
+                        <td>{{ experiment.iterations }}</td>
+                    </tr>
+                    <tr>
+                        <th>Average Time:</th>
+                        <td>
+                            {% if experiment.avg_time %}
+                            {{ "%.6f"|format(experiment.avg_time) }} seconds
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Standard Deviation:</th>
+                        <td>
+                            {% if experiment.stddev_time %}
+                            {{ "%.6f"|format(experiment.stddev_time) }} seconds
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Created:</th>
+                        <td>{{ experiment.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Query</h5>
+            </div>
+            <div class="card-body">
+                <pre class="bg-light p-3 rounded"><code>{{ experiment.query }}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Visualization</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Chart Type:</label>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary active" 
+                                hx-get="/results/{{ experiment.id }}/chart?type=bar" 
+                                hx-target="#chart-container">
+                            Bar Chart
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" 
+                                hx-get="/results/{{ experiment.id }}/chart?type=line" 
+                                hx-target="#chart-container">
+                            Line Chart
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" 
+                                hx-get="/results/{{ experiment.id }}/chart?type=histogram" 
+                                hx-target="#chart-container">
+                            Histogram
+                        </button>
+                    </div>
+                </div>
+                <div id="chart-container" class="chart-container" 
+                     hx-get="/results/{{ experiment.id }}/chart?type=bar" 
+                     hx-trigger="load">
+                    <!-- Chart will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trial Results Table -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Individual Trial Results</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Trial #</th>
+                                <th>Execution Time (s)</th>
+                                <th>Cost Estimate</th>
+                                <th>Relative Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for trial in trials %}
+                            {% set avg_time = experiment.avg_time or 0 %}
+                            {% set performance_ratio = (trial.execution_time / avg_time) if avg_time > 0 else 1 %}
+                            <tr>
+                                <td>{{ trial.run_index }}</td>
+                                <td>{{ "%.6f"|format(trial.execution_time) }}</td>
+                                <td>
+                                    {% if trial.cost_estimate %}
+                                    {{ "%.2f"|format(trial.cost_estimate) }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if performance_ratio < 0.9 %}
+                                    <span class="badge bg-success">{{ "%.1f"|format(performance_ratio * 100) }}% (Fast)</span>
+                                    {% elif performance_ratio > 1.1 %}
+                                    <span class="badge bg-warning">{{ "%.1f"|format(performance_ratio * 100) }}% (Slow)</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ "%.1f"|format(performance_ratio * 100) }}% (Average)</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <a href="/results" class="btn btn-secondary">← Back to All Results</a>
+        <a href="/experiment" class="btn btn-primary">Run New Experiment</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle chart button active state
+document.addEventListener('htmx:afterSwap', function(event) {
+    if (event.target.id === 'chart-container') {
+        // Update active button state
+        const buttons = document.querySelectorAll('.btn-group .btn');
+        buttons.forEach(btn => {
+            btn.classList.remove('active');
+            if (btn === event.detail.elt) {
+                btn.classList.add('active');
+            }
+        });
+    }
+});
+</script>
+{% endblock %} 

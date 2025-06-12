@@ -1,0 +1,214 @@
+Project Goal
+Build a reproducible, Docker-based benchmarking platform that:
+
+Loads a PostgreSQL dump and a list of SQL queries.
+Compares multiple sources of pg_statistics (the built-in PostgreSQL stats vs. randomly generated ones)
+For each stats-source and each query, runs n trials, measures execution times (and EXPLAIN cost estimates), and computes average & standard deviation.
+Stores all results in a database.
+Exposes a FastAPI backend for orchestration/data, and a SvelteKit frontend to upload dumps/queries, launch experiments, and visualize results (tables + interactive graphs).
+1. Docker Compose (docker-compose.yml)
+
+version: "3.8"
+services:
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: experiment
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+      - ./samples/dump.sql:/docker-entrypoint-initdb.d/dump.sql
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/experiment
+    volumes:
+      - ./backend:/app
+      - ./samples/queries.sql:/app/samples/queries.sql
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+2. Backend (./backend)
+
+2.1. Dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN pip install poetry && poetry config virtualenvs.create false && poetry install 
+COPY . .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+2.2. Directory Layout
+backend/
+├── Dockerfile
+├── pyproject.toml
+└── app/
+    ├── main.py
+    ├── models.py
+    ├── database.py
+    ├── schemas.py
+    ├── stats_sources/
+    │   ├── base.py
+    │   ├── direct_pg.py
+    │   └── random_pg.py
+    ├── experiment.py
+    └── routers/
+        ├── upload.py
+        ├── run.py
+        └── results.py
+2.3. Key Components
+database.py
+Create SQLAlchemy engine, SessionLocal, and Base.
+Automatically run Alembic migrations (optional).
+models.py
+Experiment (id, stats_source, query, iterations, avg_time, stddev_time, created_at).
+Trial (id, experiment_id, run_index, execution_time, cost_estimate).
+stats_sources/base.py
+from abc import ABC, abstractmethod
+from sqlalchemy.engine import Engine
+
+class StatsSource(ABC):
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    @abstractmethod
+    def apply_statistics(self):
+        """Apply this stats source to the database (e.g. ALTER TABLE SET STATISTICS)."""
+
+    @abstractmethod
+    def name(self) -> str:
+        """Unique name for this stats source."""
+stats_sources/direct_pg.py
+from .base import StatsSource
+
+class DirectPgStatsSource(StatsSource):
+    def name(self): return "direct_pg"
+    def apply_statistics(self):
+        # No-op: database’s own pg_statistics already in effect
+        pass
+stats_sources/random_pg.py
+import random
+from .base import StatsSource
+
+class RandomPgStatsSource(StatsSource):
+    def name(self): return "random_pg"
+    def apply_statistics(self):
+        # For each table.column in pg_stats, generate a random n_distinct, histograms, null_frac values:
+        with self.engine.begin() as conn:
+            stats = conn.execute("SELECT schemaname, tablename, attname FROM pg_stats").all()
+            for schema, table, col in stats:
+                rnd = random.uniform(-1,1)
+                conn.execute(f"""
+                    ALTER TABLE "{schema}"."{table}" ALTER COLUMN "{col}"
+                    SET STATISTICS {random.randint(0,100)};
+                """)
+experiment.py
+import time
+from sqlalchemy.orm import Session
+from .stats_sources import StatsSource
+
+class ExperimentRunner:
+    def __init__(self, session: Session, engine):
+        self.session = session
+        self.engine = engine
+
+    def run_single(self, stats_src: StatsSource, sql: str, iterations: int):
+        stats_src.apply_statistics()
+        times = []
+        for i in range(iterations):
+            start = time.perf_counter()
+            with self.engine.begin() as conn:
+                conn.execute(sql)
+            end = time.perf_counter()
+            times.append(end - start)
+        avg = sum(times)/len(times)
+        stddev = (sum((t-avg)**2 for t in times)/len(times))**0.5
+        # store Experiment + Trials in DB
+        # ...
+        return avg, stddev, times
+routers/upload.py
+POST /upload/dump → accepts dump.sql, restores to postgres via psql.
+POST /upload/queries → accepts queries.sql, saves it on disk.
+routers/run.py
+POST /experiment with JSON { "stats_methods": ["direct_pg","random_pg"], "iterations": n }.
+Loads all queries from saved queries.sql.
+For each method and each query calls ExperimentRunner.run_single(...).
+Returns summary.
+routers/results.py
+GET /results → paginated experiments.
+GET /results/{experiment_id}/trials → per-trial times.
+3. Frontend (./frontend)
+
+3.1. Dockerfile
+FROM node:20
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN npm install
+COPY . .
+CMD ["npm", "run", "dev", "--", "--host"]
+3.2. Directory Layout
+frontend/
+├── Dockerfile
+├── package.json
+└── src/
+    ├── routes/
+    │   ├── +page.svelte        # Upload dump & queries
+    │   ├── experiments/+page.svelte  # Configure & launch
+    │   └── results/[id]/+page.svelte # View graphs
+    ├── lib/
+    │   ├── api.ts              # fetch wrappers
+    │   └── stores.ts           # state management
+    └── components/
+        ├── FileUploader.svelte
+        ├── ExperimentForm.svelte
+        ├── ResultsTable.svelte
+        └── TimeSeriesChart.svelte  # use Chart.js or Recharts
+3.3. Key Features
+Upload Page
+Two file inputs: dump.sql and queries.sql.
+POSTs both to /api/upload/....
+Experiment Page
+Multi-select of stats methods (populated from backend).
+Numeric input for iterations n.
+“Run Experiments” button triggers POST /api/experiment.
+Shows progress indicator.
+Results Page
+Table summarizing each query × stats method: avg & stddev.
+Interactive charts:
+Bar chart ranking stats methods by overall mean time.
+Line chart of each trial’s execution time.
+CSV download.
+Tech
+SvelteKit v1, TypeScript.
+Fetch wrapper handles JSON and streaming responses.
+Chart.js via chart.js + svelte-chartjs (or your choice).
+4. Running the Project
+
+Clone this repo.
+Place your dump.sql and queries.sql in ./samples/ or use the UI to upload.
+In project root:
+docker-compose up --build
+Backend API at http://localhost:8000, frontend at http://localhost:5173.
+Use the UI to upload, configure, run experiments, and explore results.
+Deliverables for the AI
+Ask the AI to generate:
+
+All source files above, with correct imports, error handling, and documentation comments.
+A complete docker-compose.yml and Dockerfiles for backend & frontend.
+A sample samples/dump.sql (small toy schema) and samples/queries.sql.
+Instructions in README.md for setup & running.
+With this prompt, another AI will have everything needed to scaffold and implement the full, reproducible experiment suite.

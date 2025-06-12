@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Results - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Experiment Results</h1>
+        <p class="lead">View and analyze results from your benchmarking experiments.</p>
+    </div>
+</div>
+
+{% if experiments %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>All Experiments</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Statistics Source</th>
+                                <th>Iterations</th>
+                                <th>Avg Time (s)</th>
+                                <th>Std Dev (s)</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for experiment in experiments %}
+                            <tr>
+                                <td>{{ experiment.id }}</td>
+                                <td>{{ experiment.stats_source }}</td>
+                                <td>{{ experiment.iterations }}</td>
+                                <td>
+                                    {% if experiment.avg_time %}
+                                    {{ "%.4f"|format(experiment.avg_time) }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if experiment.stddev_time %}
+                                    {{ "%.4f"|format(experiment.stddev_time) }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td>{{ experiment.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            hx-get="/results/{{ experiment.id }}/table" 
+                                            hx-target="#details-{{ experiment.id }}"
+                                            hx-swap="innerHTML">
+                                        View Details
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr id="details-{{ experiment.id }}" style="display: none;">
+                                <td colspan="7">
+                                    <!-- Details will be loaded here -->
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Selected Experiment Details -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div id="experiment-details" class="card" style="display: none;">
+            <div class="card-header">
+                <h5>Experiment Details</h5>
+            </div>
+            <div class="card-body">
+                <div id="details-content"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Controls -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div id="chart-controls" class="card" style="display: none;">
+            <div class="card-header">
+                <h5>Visualization</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Chart Type:</label>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary" id="chart-bar">Bar Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="chart-line">Line Chart</button>
+                        <button type="button" class="btn btn-outline-primary" id="chart-histogram">Histogram</button>
+                    </div>
+                </div>
+                <div id="chart-container" class="chart-container">
+                    <!-- Chart will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <h5>No experiments found</h5>
+            <p>You haven't run any experiments yet. <a href="/experiment">Run your first experiment</a> to see results here.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Show/hide experiment details
+function showExperimentDetails(experimentId) {
+    document.getElementById('experiment-details').style.display = 'block';
+    document.getElementById('chart-controls').style.display = 'block';
+    
+    // Set up chart buttons
+    const chartButtons = document.querySelectorAll('#chart-controls .btn-group .btn');
+    chartButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const chartType = this.id.replace('chart-', '');
+            loadChart(experimentId, chartType);
+            
+            // Update active button
+            chartButtons.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+    
+    // Load default chart
+    loadChart(experimentId, 'bar');
+    document.getElementById('chart-bar').classList.add('active');
+}
+
+function loadChart(experimentId, chartType) {
+    htmx.ajax('GET', `/results/${experimentId}/chart?type=${chartType}`, {
+        target: '#chart-container',
+        swap: 'innerHTML'
+    });
+}
+
+// Handle experiment details loading
+document.addEventListener('htmx:afterSwap', function(event) {
+    if (event.target.id.startsWith('details-')) {
+        const experimentId = event.target.id.replace('details-', '');
+        event.target.style.display = 'table-row';
+        showExperimentDetails(experimentId);
+    }
+});
+</script>
+{% endblock %} 

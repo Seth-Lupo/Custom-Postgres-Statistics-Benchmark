@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Run Experiment - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Run Experiment</h1>
+    
+    {% if not queries_available %}
+    <div class="alert alert-warning">
+        <strong>No queries file uploaded!</strong> Please <a href="/upload">upload your queries</a> first.
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body">
+            <form hx-post="/experiment" 
+                  hx-target="#experiment-container"
+                  hx-indicator="#submit-spinner">
+                <div class="mb-3">
+                    <label for="stats_source" class="form-label">Statistics Source</label>
+                    <select class="form-select" id="stats_source" name="stats_source" required>
+                        {% for key, name in stats_sources %}
+                        <option value="{{ key }}">{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="iterations" class="form-label">Number of Iterations</label>
+                    <input type="number" class="form-control" id="iterations" name="iterations" 
+                           value="10" min="1" max="100" required>
+                    <div class="form-text">How many times to run each query (1-100)</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span id="submit-spinner" class="spinner-border spinner-border-sm me-2 htmx-indicator" role="status" aria-hidden="true"></span>
+                    Run Experiment
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="experiment-container" class="mt-4"></div>
+    {% endif %}
+</div>
+
+<script>
+let currentLogLevel = 'info';
+let logHistory = [];
+
+function setLogLevel(level, button) {
+    currentLogLevel = level;
+    
+    // Update button states
+    button.parentElement.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    button.classList.add('active');
+    
+    // Filter and display logs
+    const logElement = document.querySelector('pre[id^="progress-log-"]');
+    if (logElement) {
+        logElement.innerHTML = filterLogs(logHistory);
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+}
+
+function filterLogs(logs) {
+    return logs.filter(log => {
+        if (currentLogLevel === 'error') {
+            return log.includes('❌');
+        } else if (currentLogLevel === 'warning') {
+            return log.includes('⚠️') || log.includes('❌');
+        }
+        return true;
+    }).join('\n');
+}
+
+function formatTimestamp() {
+    const now = new Date();
+    return now.toLocaleTimeString('en-US', { 
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3
+    });
+}
+
+document.addEventListener('htmx:sseMessage', function(event) {
+    const data = JSON.parse(event.detail.message);
+    
+    // Update progress bar
+    if (data.progress !== undefined) {
+        const progressBar = document.querySelector('.progress-bar');
+        if (progressBar) {
+            progressBar.style.width = data.progress + '%';
+            progressBar.textContent = data.progress + '%';
+            
+            // Update progress bar color based on log level
+            progressBar.className = 'progress-bar';
+            if (data.log_level === 'error') {
+                progressBar.classList.add('bg-danger');
+            } else if (data.log_level === 'warning') {
+                progressBar.classList.add('bg-warning');
+            } else {
+                progressBar.classList.add('bg-primary');
+            }
+        }
+    }
+    
+    // Update messages log
+    if (data.messages) {
+        const logElement = document.querySelector('pre[id^="progress-log-"]');
+        if (logElement) {
+            data.messages.forEach(message => {
+                const timestamp = formatTimestamp();
+                const logEntry = `[${timestamp}] ${message}`;
+                logHistory.push(logEntry);
+            });
+            
+            logElement.innerHTML = filterLogs(logHistory);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+    }
+    
+    // Handle completion or error
+    if (data.html) {
+        const container = document.querySelector('#experiment-container');
+        if (container) {
+            container.innerHTML = data.html;
+        }
+    }
+});
+</script>
+
+<style>
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+pre {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.btn-group .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.progress {
+    height: 1.5rem;
+}
+
+.progress-bar {
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    transition: width 0.3s ease;
+}
+</style>
+{% endblock %} 

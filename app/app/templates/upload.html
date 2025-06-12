@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Files - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Upload Files</h1>
+        <p class="lead">Upload your PostgreSQL database dump and SQL queries file to begin benchmarking.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Database Dump</h5>
+            </div>
+            <div class="card-body">
+                <form hx-post="/upload/dump" 
+                      hx-target="#dump-status" 
+                      hx-encoding="multipart/form-data"
+                      hx-indicator="#dump-loading">
+                    <div class="mb-3">
+                        <label for="dump-file" class="form-label">Select SQL dump file</label>
+                        <input class="form-control" type="file" id="dump-file" name="file" accept=".sql,.dump" required>
+                        <div class="form-text">Accepted formats: .sql, .dump</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="dump-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Upload Dump
+                    </button>
+                </form>
+                <div id="dump-status" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>SQL Queries</h5>
+            </div>
+            <div class="card-body">
+                <form hx-post="/upload/queries" 
+                      hx-target="#queries-status" 
+                      hx-encoding="multipart/form-data"
+                      hx-indicator="#queries-loading">
+                    <div class="mb-3">
+                        <label for="queries-file" class="form-label">Select SQL queries file</label>
+                        <input class="form-control" type="file" id="queries-file" name="file" accept=".sql" required>
+                        <div class="form-text">Accepted format: .sql</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="queries-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Upload Queries
+                    </button>
+                </form>
+                <div id="queries-status" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <h6>Instructions:</h6>
+            <ul class="mb-0">
+                <li><strong>Database Dump:</strong> Upload a PostgreSQL dump file (.sql or .dump) that will be loaded into the database.</li>
+                <li><strong>SQL Queries:</strong> Upload a file containing SQL queries separated by semicolons. These queries will be benchmarked.</li>
+                <li>After uploading both files, you can proceed to <a href="/experiment">run experiments</a>.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-12">
+        <a href="/experiment" class="btn btn-success">Proceed to Experiments →</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+</style>
+{% endblock %} 

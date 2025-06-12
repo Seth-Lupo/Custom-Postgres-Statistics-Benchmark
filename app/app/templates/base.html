@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PostgreSQL Statistics Benchmarking Platform{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    
+    {% block head %}{% endblock %}
+    
+    <style>
+        .progress {
+            height: 25px;
+        }
+        .chart-container {
+            margin: 20px 0;
+        }
+        .experiment-card {
+            margin-bottom: 20px;
+        }
+        .alert {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    {% if show_navigation %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">PG Statistics Benchmarking</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/upload">Upload Files</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/experiment">Run Experiment</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/results">View Results</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Main Content -->
+    <div class="container mt-4">
+        {% block content %}
+        <div class="jumbotron bg-primary text-white p-5 rounded">
+            <h1 class="display-4">PostgreSQL Statistics Benchmarking Platform</h1>
+            <p class="lead">Compare query performance with different PostgreSQL statistics sources</p>
+            <hr class="my-4">
+            <p>Upload your database dump and queries, then run benchmarking experiments to compare performance.</p>
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-body text-dark">
+                            <h5 class="card-title">1. Upload Files</h5>
+                            <p class="card-text">Upload your PostgreSQL dump and SQL queries file.</p>
+                            <a href="/upload" class="btn btn-primary">Upload Files</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-body text-dark">
+                            <h5 class="card-title">2. Run Experiment</h5>
+                            <p class="card-text">Configure and run benchmarking experiments.</p>
+                            <a href="/experiment" class="btn btn-success">Run Experiment</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-body text-dark">
+                            <h5 class="card-title">3. View Results</h5>
+                            <p class="card-text">Analyze results with detailed charts and statistics.</p>
+                            <a href="/results" class="btn btn-info">View Results</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html> 
