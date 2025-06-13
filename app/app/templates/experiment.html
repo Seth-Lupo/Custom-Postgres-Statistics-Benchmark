@@ -27,6 +27,7 @@
                   hx-indicator="#submit-spinner"
                   hx-swap="innerHTML show:top"
                   class="needs-validation"
+                  id="experiment-form"
                   novalidate>
                 <div class="row">
                     <div class="col-12 mb-3">
@@ -95,7 +96,7 @@
                 </div>
                 
                 <div class="d-flex justify-content-end">
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="run-experiment-btn">
                         <span id="submit-spinner" class="spinner-border spinner-border-sm me-2 htmx-indicator" role="status" aria-hidden="true"></span>
                         <i class="bi bi-play-fill me-1"></i>
                         Run Experiment
@@ -271,6 +272,33 @@ document.addEventListener('htmx:sseMessage', function(event) {
                 source.close();
             }
         }
+    }
+});
+
+// Disable form after experiment starts
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.successful && evt.detail.target.id === 'experiment-container') {
+        // Check if response contains experiment result div
+        if (evt.detail.xhr.response.includes('experiment-result')) {
+            // Disable the form
+            document.getElementById('experiment-form').querySelectorAll('input, select, button').forEach(el => {
+                el.disabled = true;
+            });
+            // Update button text to show running state
+            document.getElementById('run-experiment-btn').innerHTML = `
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Experiment Running...
+            `;
+        }
+    }
+});
+
+// Re-enable form if there was an error
+document.body.addEventListener('htmx:responseError', function(evt) {
+    if (evt.detail.target.id === 'experiment-container') {
+        document.getElementById('experiment-form').querySelectorAll('input, select, button').forEach(el => {
+            el.disabled = false;
+        });
     }
 });
 </script>

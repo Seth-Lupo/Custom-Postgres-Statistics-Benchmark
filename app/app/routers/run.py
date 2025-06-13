@@ -248,7 +248,7 @@ async def experiment_stream(experiment_id: int):
                 }) + "\n\n"
                 break
             
-            await asyncio.sleep(0.5)  # Poll every 500ms
+            await asyncio.sleep(0.2)  # Poll every 500ms
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

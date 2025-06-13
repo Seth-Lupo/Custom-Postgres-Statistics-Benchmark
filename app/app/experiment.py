@@ -199,6 +199,29 @@ class ExperimentRunner:
         query_logger.debug(f"Starting new trial with query: {query}")
         
         try:
+            # Clear caches before trial
+            session.commit()  # Commit any pending transaction
+            
+            # These operations need to be outside a transaction
+            conn = session.connection().connection
+            conn.set_session(autocommit=True)
+            try:
+                session.execute(text("DISCARD ALL"))
+            finally:
+                conn.set_session(autocommit=False)
+            
+            # These can run inside a transaction
+            session.execute(text("SET LOCAL statement_timeout = 0"))
+            session.execute(text("SET LOCAL work_mem = '16MB'"))
+            session.execute(text("SET LOCAL maintenance_work_mem = '16MB'"))
+            session.execute(text("SELECT pg_stat_reset()"))
+            try:
+                session.execute(text("SELECT pg_stat_statements_reset()"))
+            except Exception:
+                query_logger.debug("pg_stat_statements extension not available, skipping reset")
+            session.commit()
+            query_logger.debug("Cleared caches before trial")
+            
             # Get query plan and cost estimate
             explain_query = text(f"EXPLAIN (FORMAT JSON) {query}")
             explain_result = session.execute(explain_query)
