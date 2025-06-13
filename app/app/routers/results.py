@@ -3,13 +3,17 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
+import json
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
+from sqlmodel import Session, select
 from ..database import get_db
 from ..models import Experiment, Trial
-from sqlmodel import Session
+from ..logging_config import web_logger
+import plotly.graph_objects as go
+import plotly.utils
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
@@ -137,4 +141,113 @@ def generate_chart(experiment: Experiment, trials: list, chart_type: str) -> str
     plt.savefig(chart_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    return chart_path 
+    return chart_path
+
+
+@router.get("/results/{experiment_id}/trial/{trial_id}/pg_stats")
+def get_trial_pg_stats(experiment_id: int, trial_id: int, session: Session = Depends(get_db)):
+    """Get pg_stats snapshot for a specific trial."""
+    trial = session.query(Trial).filter(
+        Trial.id == trial_id, 
+        Trial.experiment_id == experiment_id
+    ).first()
+    
+    if not trial:
+        raise HTTPException(status_code=404, detail="Trial not found")
+    
+    if not trial.pg_stats_snapshot:
+        return JSONResponse({"data": [], "columns": []})
+    
+    try:
+        pg_stats_data = json.loads(trial.pg_stats_snapshot)
+        
+        # Define column headers for pg_stats
+        columns = [
+            {"key": "schemaname", "label": "Schema"},
+            {"key": "tablename", "label": "Table"},
+            {"key": "attname", "label": "Column"},
+            {"key": "inherited", "label": "Inherited"},
+            {"key": "null_frac", "label": "Null Fraction"},
+            {"key": "avg_width", "label": "Avg Width"},
+            {"key": "n_distinct", "label": "N Distinct"},
+            {"key": "most_common_vals", "label": "Most Common Values"},
+            {"key": "most_common_freqs", "label": "Most Common Freqs"},
+            {"key": "histogram_bounds", "label": "Histogram Bounds"},
+            {"key": "correlation", "label": "Correlation"},
+            {"key": "most_common_elems", "label": "Most Common Elements"},
+            {"key": "most_common_elem_freqs", "label": "Most Common Elem Freqs"},
+            {"key": "elem_count_histogram", "label": "Element Count Histogram"}
+        ]
+        
+        return JSONResponse({
+            "data": pg_stats_data,
+            "columns": columns,
+            "title": f"pg_stats Snapshot - Trial {trial.run_index}"
+        })
+        
+    except json.JSONDecodeError as e:
+        web_logger.error(f"Failed to parse pg_stats snapshot for trial {trial_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse statistics data")
+
+
+@router.get("/results/{experiment_id}/trial/{trial_id}/pg_statistic")
+def get_trial_pg_statistic(experiment_id: int, trial_id: int, session: Session = Depends(get_db)):
+    """Get pg_statistic snapshot for a specific trial."""
+    trial = session.query(Trial).filter(
+        Trial.id == trial_id, 
+        Trial.experiment_id == experiment_id
+    ).first()
+    
+    if not trial:
+        raise HTTPException(status_code=404, detail="Trial not found")
+    
+    if not trial.pg_statistic_snapshot:
+        return JSONResponse({"data": [], "columns": []})
+    
+    try:
+        pg_statistic_data = json.loads(trial.pg_statistic_snapshot)
+        
+        # Define column headers for pg_statistic
+        columns = [
+            {"key": "table_name", "label": "Table Name"},
+            {"key": "staattnum", "label": "Attribute Number"},
+            {"key": "stainherit", "label": "Inherit"},
+            {"key": "stanullfrac", "label": "Null Fraction"},
+            {"key": "stawidth", "label": "Width"},
+            {"key": "stadistinct", "label": "Distinct"},
+            {"key": "stakind1", "label": "Kind 1"},
+            {"key": "stakind2", "label": "Kind 2"},
+            {"key": "stakind3", "label": "Kind 3"},
+            {"key": "stakind4", "label": "Kind 4"},
+            {"key": "stakind5", "label": "Kind 5"},
+            {"key": "staop1", "label": "Op 1"},
+            {"key": "staop2", "label": "Op 2"},
+            {"key": "staop3", "label": "Op 3"},
+            {"key": "staop4", "label": "Op 4"},
+            {"key": "staop5", "label": "Op 5"},
+            {"key": "stacoll1", "label": "Coll 1"},
+            {"key": "stacoll2", "label": "Coll 2"},
+            {"key": "stacoll3", "label": "Coll 3"},
+            {"key": "stacoll4", "label": "Coll 4"},
+            {"key": "stacoll5", "label": "Coll 5"},
+            {"key": "stanumbers1", "label": "Numbers 1"},
+            {"key": "stanumbers2", "label": "Numbers 2"},
+            {"key": "stanumbers3", "label": "Numbers 3"},
+            {"key": "stanumbers4", "label": "Numbers 4"},
+            {"key": "stanumbers5", "label": "Numbers 5"},
+            {"key": "stavalues1", "label": "Values 1"},
+            {"key": "stavalues2", "label": "Values 2"},
+            {"key": "stavalues3", "label": "Values 3"},
+            {"key": "stavalues4", "label": "Values 4"},
+            {"key": "stavalues5", "label": "Values 5"}
+        ]
+        
+        return JSONResponse({
+            "data": pg_statistic_data,
+            "columns": columns,
+            "title": f"pg_statistic Snapshot - Trial {trial.run_index}"
+        })
+        
+    except json.JSONDecodeError as e:
+        web_logger.error(f"Failed to parse pg_statistic snapshot for trial {trial_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse statistics data") 

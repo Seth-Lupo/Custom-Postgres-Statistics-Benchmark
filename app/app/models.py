@@ -32,6 +32,8 @@ class Trial(SQLModel, table=True):
     run_index: int
     execution_time: float
     cost_estimate: Optional[float] = Field(default=None)
+    pg_stats_snapshot: Optional[str] = Field(default=None)  # JSON string of pg_stats data
+    pg_statistic_snapshot: Optional[str] = Field(default=None)  # JSON string of pg_statistic data
     
     # Relationship to experiment
     experiment: Optional[Experiment] = Relationship(back_populates="trials") 

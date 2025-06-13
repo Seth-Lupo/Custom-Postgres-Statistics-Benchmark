@@ -1,6 +1,7 @@
 import time
 import statistics
 import traceback
+import json
 from typing import List, Tuple, Callable, Dict, Any
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -194,12 +195,17 @@ class ExperimentRunner:
                     execution_times.append(execution_time)
                     query_plans.append(query_plan)
                     
+                    # Capture statistics snapshots for this trial
+                    pg_stats_snapshot, pg_statistic_snapshot = self._capture_statistics_snapshots(experiment_db_session)
+                    
                     # Record trial
                     trial = Trial(
                         experiment_id=experiment.id,
                         run_index=i + 1,
                         execution_time=execution_time,
-                        cost_estimate=cost_estimate
+                        cost_estimate=cost_estimate,
+                        pg_stats_snapshot=pg_stats_snapshot,
+                        pg_statistic_snapshot=pg_statistic_snapshot
                     )
                     session.add(trial)
                     session.commit()
@@ -209,6 +215,7 @@ class ExperimentRunner:
                     query_logger.debug(f"Execution time: {execution_time:.4f}s")
                     query_logger.debug(f"Cost estimate: {cost_estimate:.2f}")
                     query_logger.debug(f"Query plan: {query_plan}")
+                    query_logger.debug(f"Captured statistics snapshots for trial {i + 1}")
                     
                     result_msg = f"Trial {i + 1} completed: Time={execution_time:.4f}s, Cost={cost_estimate:.2f}"
                     log_and_callback(result_msg, i + 1, iterations)
@@ -376,3 +383,96 @@ class ExperimentRunner:
             query_logger.error(error_msg)
             query_logger.debug(traceback.format_exc())
             raise QueryExecutionError(error_msg) from e 
+
+    def _capture_statistics_snapshots(self, session: Session) -> Tuple[str, str]:
+        """Capture pg_stats and pg_statistic snapshots and return as JSON strings."""
+        try:
+            # Capture pg_stats snapshot
+            pg_stats_query = text("""
+                SELECT schemaname, tablename, attname, inherited, null_frac, avg_width, n_distinct,
+                       most_common_vals, most_common_freqs, histogram_bounds, correlation, 
+                       most_common_elems, most_common_elem_freqs, elem_count_histogram
+                FROM pg_stats 
+                ORDER BY schemaname, tablename, attname
+            """)
+            pg_stats_result = session.execute(pg_stats_query)
+            pg_stats_data = []
+            for row in pg_stats_result:
+                pg_stats_data.append({
+                    'schemaname': row.schemaname,
+                    'tablename': row.tablename, 
+                    'attname': row.attname,
+                    'inherited': row.inherited,
+                    'null_frac': float(row.null_frac) if row.null_frac is not None else None,
+                    'avg_width': int(row.avg_width) if row.avg_width is not None else None,
+                    'n_distinct': float(row.n_distinct) if row.n_distinct is not None else None,
+                    'most_common_vals': str(row.most_common_vals) if row.most_common_vals is not None else None,
+                    'most_common_freqs': str(row.most_common_freqs) if row.most_common_freqs is not None else None,
+                    'histogram_bounds': str(row.histogram_bounds) if row.histogram_bounds is not None else None,
+                    'correlation': float(row.correlation) if row.correlation is not None else None,
+                    'most_common_elems': str(row.most_common_elems) if row.most_common_elems is not None else None,
+                    'most_common_elem_freqs': str(row.most_common_elem_freqs) if row.most_common_elem_freqs is not None else None,
+                    'elem_count_histogram': str(row.elem_count_histogram) if row.elem_count_histogram is not None else None
+                })
+            
+            # Capture pg_statistic snapshot  
+            pg_statistic_query = text("""
+                SELECT starelid::regclass AS table_name, staattnum, stainherit, stanullfrac, 
+                       stawidth, stadistinct, stakind1, stakind2, stakind3, stakind4, stakind5,
+                       staop1, staop2, staop3, staop4, staop5,
+                       stacoll1, stacoll2, stacoll3, stacoll4, stacoll5,
+                       stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
+                       stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
+                FROM pg_statistic 
+                ORDER BY starelid, staattnum
+            """)
+            pg_statistic_result = session.execute(pg_statistic_query)
+            pg_statistic_data = []
+            for row in pg_statistic_result:
+                pg_statistic_data.append({
+                    'table_name': str(row.table_name),
+                    'staattnum': int(row.staattnum),
+                    'stainherit': bool(row.stainherit),
+                    'stanullfrac': float(row.stanullfrac) if row.stanullfrac is not None else None,
+                    'stawidth': int(row.stawidth) if row.stawidth is not None else None,
+                    'stadistinct': float(row.stadistinct) if row.stadistinct is not None else None,
+                    'stakind1': int(row.stakind1) if row.stakind1 is not None else None,
+                    'stakind2': int(row.stakind2) if row.stakind2 is not None else None,
+                    'stakind3': int(row.stakind3) if row.stakind3 is not None else None,
+                    'stakind4': int(row.stakind4) if row.stakind4 is not None else None,
+                    'stakind5': int(row.stakind5) if row.stakind5 is not None else None,
+                    'staop1': int(row.staop1) if row.staop1 is not None else None,
+                    'staop2': int(row.staop2) if row.staop2 is not None else None,
+                    'staop3': int(row.staop3) if row.staop3 is not None else None,
+                    'staop4': int(row.staop4) if row.staop4 is not None else None,
+                    'staop5': int(row.staop5) if row.staop5 is not None else None,
+                    'stacoll1': int(row.stacoll1) if row.stacoll1 is not None else None,
+                    'stacoll2': int(row.stacoll2) if row.stacoll2 is not None else None,
+                    'stacoll3': int(row.stacoll3) if row.stacoll3 is not None else None,
+                    'stacoll4': int(row.stacoll4) if row.stacoll4 is not None else None,
+                    'stacoll5': int(row.stacoll5) if row.stacoll5 is not None else None,
+                    'stanumbers1': str(row.stanumbers1) if row.stanumbers1 is not None else None,
+                    'stanumbers2': str(row.stanumbers2) if row.stanumbers2 is not None else None,
+                    'stanumbers3': str(row.stanumbers3) if row.stanumbers3 is not None else None,
+                    'stanumbers4': str(row.stanumbers4) if row.stanumbers4 is not None else None,
+                    'stanumbers5': str(row.stanumbers5) if row.stanumbers5 is not None else None,
+                    'stavalues1': str(row.stavalues1) if row.stavalues1 is not None else None,
+                    'stavalues2': str(row.stavalues2) if row.stavalues2 is not None else None,
+                    'stavalues3': str(row.stavalues3) if row.stavalues3 is not None else None,
+                    'stavalues4': str(row.stavalues4) if row.stavalues4 is not None else None,
+                    'stavalues5': str(row.stavalues5) if row.stavalues5 is not None else None
+                })
+            
+            # Convert to JSON strings
+            pg_stats_json = json.dumps(pg_stats_data, default=str)
+            pg_statistic_json = json.dumps(pg_statistic_data, default=str)
+            
+            stats_logger.debug(f"Captured {len(pg_stats_data)} pg_stats entries and {len(pg_statistic_data)} pg_statistic entries")
+            
+            return pg_stats_json, pg_statistic_json
+            
+        except Exception as e:
+            stats_logger.error(f"Failed to capture statistics snapshots: {str(e)}")
+            stats_logger.debug(traceback.format_exc())
+            # Return empty JSON on error
+            return json.dumps([]), json.dumps([]) 
