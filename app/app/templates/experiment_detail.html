@@ -218,14 +218,20 @@
     <!-- Configuration Section -->
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-white py-3">
-            <div class="d-flex align-items-center">
-                <i class="bi bi-gear me-2 text-primary"></i>
-                <h5 class="card-title mb-0">Configuration Details</h5>
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-gear me-2 text-primary"></i>
+                    <h5 class="card-title mb-0">Configuration Details</h5>
+                </div>
+                <button type="button" class="btn btn-outline-primary" onclick="showConfigurationModal()">
+                    <i class="bi bi-eye me-1"></i>
+                    View Configuration
+                </button>
             </div>
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <div class="mb-3">
                         <label class="form-label small text-muted">Configuration Name</label>
                         <div class="p-2 bg-light rounded">
@@ -234,42 +240,29 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">Modification Status</label>
-                        <div class="p-2 bg-light rounded">
-                            {% if experiment.config_modified %}
-                                <span class="badge bg-warning">
-                                    <i class="bi bi-exclamation-triangle me-1"></i>
-                                    Modified from Original
-                                </span>
-                            {% else %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check-circle me-1"></i>
-                                    Unmodified
-                                </span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <div class="mb-3">
                         <label class="form-label small text-muted">Configuration Type</label>
                         <div class="p-2 bg-light rounded">
-                            {% if experiment.config_yaml and experiment.config_modified %}
-                                <span class="badge bg-danger">
+                            {% if experiment.config_yaml and not experiment.config_modified %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    Unchanged
+                                </span>
+                            {% elif experiment.config_yaml and experiment.config_modified %}
+                                <span class="badge bg-warning">
                                     <i class="bi bi-pencil-square me-1"></i>
-                                    Custom (Edited)
+                                    Modified
                                 </span>
                             {% elif experiment.config_yaml %}
                                 <span class="badge bg-info">
                                     <i class="bi bi-file-earmark-code me-1"></i>
-                                    Custom (Unchanged)
+                                    Custom
                                 </span>
                             {% else %}
                                 <span class="badge bg-secondary">
                                     <i class="bi bi-gear me-1"></i>
-                                    Standard
+                                    Default
                                 </span>
                             {% endif %}
                         </div>
@@ -285,73 +278,6 @@
                         <strong>Configuration Modified:</strong> This experiment used a modified configuration.
                         <br><small class="text-muted">Modified at: {{ experiment.config_modified_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
                     </div>
-                </div>
-            </div>
-            {% endif %}
-            
-            {% if experiment.original_config_yaml and experiment.config_yaml %}
-            <div class="mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="form-label small text-muted mb-0">Configuration Comparison</label>
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary me-2" type="button" data-bs-toggle="collapse" data-bs-target="#originalConfigCollapse" aria-expanded="false" aria-controls="originalConfigCollapse">
-                            <i class="bi bi-file-text me-1"></i>
-                            View Original
-                        </button>
-                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#currentConfigCollapse" aria-expanded="false" aria-controls="currentConfigCollapse">
-                            <i class="bi bi-file-earmark-code me-1"></i>
-                            View Current
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="collapse" id="originalConfigCollapse">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0">
-                                        <i class="bi bi-file-text me-1"></i>
-                                        Original Configuration
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.original_config_yaml }}</code></pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="collapse" id="currentConfigCollapse">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0">
-                                        <i class="bi bi-file-earmark-code me-1"></i>
-                                        Current Configuration
-                                        {% if experiment.config_modified %}
-                                        <span class="badge bg-warning ms-2">Modified</span>
-                                        {% endif %}
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.config_yaml }}</code></pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% elif experiment.config_yaml %}
-            <div class="mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="form-label small text-muted mb-0">YAML Configuration</label>
-                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#configYamlCollapse" aria-expanded="false" aria-controls="configYamlCollapse">
-                        <i class="bi bi-eye me-1"></i>
-                        View YAML
-                    </button>
-                </div>
-                <div class="collapse" id="configYamlCollapse">
-                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.config_yaml }}</code></pre>
                 </div>
             </div>
             {% endif %}
@@ -624,6 +550,156 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div class="modal fade" id="configurationModal" tabindex="-1" aria-labelledby="configurationModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="configurationModalLabel">
+                        <i class="bi bi-gear me-2"></i>
+                        Configuration Details - {{ experiment.name }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if experiment.original_config_yaml and experiment.config_yaml and experiment.config_modified %}
+                    <!-- Show all three buttons when configuration was modified -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-warning me-2">
+                                <i class="bi bi-pencil-square me-1"></i>
+                                Configuration Modified
+                            </span>
+                            <small class="text-muted">Choose view to compare changes</small>
+                        </div>
+                        <div class="btn-group" role="group" aria-label="Configuration view options">
+                            <button class="btn btn-sm btn-outline-secondary active" type="button" onclick="showConfigView('original', this)">
+                                <i class="bi bi-file-text me-1"></i>
+                                Original
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" onclick="showConfigView('current', this)">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                Modified
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" type="button" onclick="showConfigView('diff', this)">
+                                <i class="bi bi-file-diff me-1"></i>
+                                Diff
+                            </button>
+                        </div>
+                    </div>
+                    {% elif experiment.config_yaml %}
+                    <!-- Show single configuration view when not modified -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            {% if experiment.original_config_yaml %}
+                            <span class="badge bg-success me-2">
+                                <i class="bi bi-check-circle me-1"></i>
+                                Configuration Unchanged
+                            </span>
+                            <small class="text-muted">Original configuration was used without modifications</small>
+                            {% else %}
+                            <span class="badge bg-info me-2">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                Custom Configuration
+                            </span>
+                            <small class="text-muted">Experiment used a custom configuration</small>
+                            {% endif %}
+                        </div>
+                       
+                    </div>
+                    {% endif %}
+                    
+                    <div class="config-view-container">
+                        {% if experiment.original_config_yaml and experiment.config_yaml and experiment.config_modified %}
+                        <!-- Original Configuration View -->
+                        <div id="originalConfigView" class="config-view active">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-text me-1"></i>
+                                        Original Configuration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.original_config_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current/Modified Configuration View -->
+                        <div id="currentConfigView" class="config-view" style="display: none;">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-earmark-code me-1"></i>
+                                        Modified Configuration
+                                        <span class="badge bg-warning ms-2">Modified</span>
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.config_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Diff View -->
+                        <div id="diffConfigView" class="config-view" style="display: none;">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-diff me-1"></i>
+                                        Configuration Changes
+                                        <small class="text-muted ms-2">(+ additions, - deletions)</small>
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="diffContent" class="diff-container">
+                                        <div class="text-center py-3">
+                                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                <span class="visually-hidden">Generating diff...</span>
+                                            </div>
+                                            <p class="text-muted mt-2 mb-0">Generating diff view...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% elif experiment.config_yaml %}
+                        <!-- Single Configuration View -->
+                        <div id="singleConfigView" class="config-view active">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-earmark-code me-1"></i>
+                                        Configuration
+                                        {% if experiment.original_config_yaml %}
+                                        <span class="badge bg-success ms-2">Unchanged</span>
+                                        {% else %}
+                                        <span class="badge bg-info ms-2">Custom</span>
+                                        {% endif %}
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.config_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    {% if experiment.config_yaml %}
+                    <button type="button" class="btn btn-primary" onclick="downloadConfiguration()">
+                        <i class="bi bi-download me-1"></i>
+                        Download YAML
+                    </button>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -913,6 +989,201 @@ function downloadLogs() {
     link.click();
     document.body.removeChild(link);
 }
+
+// Configuration View Functions
+function showConfigurationModal() {
+    const modal = new bootstrap.Modal(document.getElementById('configurationModal'));
+    modal.show();
+}
+
+function showConfigView(viewType, button) {
+    // Update button states - reset all buttons to their default outline state
+    const buttons = button.parentElement.querySelectorAll('button');
+    buttons.forEach((btn, index) => {
+        // Remove all possible button classes
+        btn.classList.remove('active', 'btn-secondary', 'btn-primary', 'btn-warning', 
+                           'btn-outline-secondary', 'btn-outline-primary', 'btn-outline-warning');
+        
+        // Set each button back to its default outline state based on its position
+        if (index === 0) { // Original button
+            btn.classList.add('btn-outline-secondary');
+        } else if (index === 1) { // Modified button
+            btn.classList.add('btn-outline-primary');
+        } else if (index === 2) { // Diff button
+            btn.classList.add('btn-outline-warning');
+        }
+    });
+    
+    // Set the clicked button to active state
+    button.classList.remove('btn-outline-secondary', 'btn-outline-primary', 'btn-outline-warning');
+    if (viewType === 'original') {
+        button.classList.add('active', 'btn-secondary');
+    } else if (viewType === 'current') {
+        button.classList.add('active', 'btn-primary');
+    } else if (viewType === 'diff') {
+        button.classList.add('active', 'btn-warning');
+    }
+    
+    // Hide all views
+    const views = document.querySelectorAll('.config-view');
+    views.forEach(view => {
+        view.style.display = 'none';
+        view.classList.remove('active');
+    });
+    
+    // Show selected view
+    const targetView = document.getElementById(viewType + 'ConfigView');
+    if (targetView) {
+        targetView.style.display = 'block';
+        targetView.classList.add('active');
+        
+        // Generate diff if diff view is selected
+        if (viewType === 'diff') {
+            generateConfigDiff();
+        }
+    }
+}
+
+function generateConfigDiff() {
+    const diffContent = document.getElementById('diffContent');
+    
+    // Extract YAML content directly from the server-side template variables
+    // Use hidden elements to store the raw content to avoid escaping issues
+    let originalConfig = '';
+    let currentConfig = '';
+    
+    // Try to get the content from the displayed views first
+    const originalView = document.querySelector('#originalConfigView pre code');
+    const currentView = document.querySelector('#currentConfigView pre code');
+    
+    if (originalView && currentView) {
+        originalConfig = originalView.textContent.trim();
+        currentConfig = currentView.textContent.trim();
+    } else {
+        // Fallback to template data (with potential escaping issues)
+        originalConfig = `{{ experiment.original_config_yaml|safe }}`.trim();
+        currentConfig = `{{ experiment.config_yaml|safe }}`.trim();
+    }
+    
+    if (!originalConfig || !currentConfig) {
+        diffContent.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Unable to generate diff: Missing configuration data
+            </div>
+        `;
+        return;
+    }
+    
+    if (originalConfig === currentConfig) {
+        diffContent.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                No differences found: The configurations are identical
+            </div>
+        `;
+        return;
+    }
+    
+    try {
+        // Simple line-by-line diff
+        const originalLines = originalConfig.split('\n');
+        const currentLines = currentConfig.split('\n');
+        
+        const diffHtml = generateSimpleDiff(originalLines, currentLines);
+        diffContent.innerHTML = diffHtml;
+    } catch (error) {
+        console.error('Error generating diff:', error);
+        diffContent.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Error generating diff: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function generateSimpleDiff(originalLines, currentLines) {
+    let diffHtml = '<div class="diff-content">';
+    
+    // Create a simple line-by-line comparison
+    const maxLines = Math.max(originalLines.length, currentLines.length);
+    
+    // Generate unified diff view
+    diffHtml += '<div class="unified-diff">';
+    
+    for (let i = 0; i < maxLines; i++) {
+        const originalLine = originalLines[i] || '';
+        const currentLine = currentLines[i] || '';
+        
+        if (originalLine === currentLine) {
+            // Unchanged line
+            if (originalLine.trim() !== '') {
+                diffHtml += `<div class="diff-line unchanged">
+                    <span class="line-number text-muted">${String(i + 1).padStart(3, ' ')}</span>
+                    <span class="line-content">  ${escapeHtml(originalLine)}</span>
+                </div>`;
+            }
+        } else {
+            // Lines are different
+            if (originalLine && !currentLines.includes(originalLine)) {
+                // Line was removed
+                diffHtml += `<div class="diff-line removed">
+                    <span class="line-number text-muted">${String(i + 1).padStart(3, ' ')}</span>
+                    <span class="line-content">- ${escapeHtml(originalLine)}</span>
+                </div>`;
+            }
+            if (currentLine && !originalLines.includes(currentLine)) {
+                // Line was added
+                diffHtml += `<div class="diff-line added">
+                    <span class="line-number text-muted">${String(i + 1).padStart(3, ' ')}</span>
+                    <span class="line-content">+ ${escapeHtml(currentLine)}</span>
+                </div>`;
+            }
+        }
+    }
+    
+    diffHtml += '</div>';
+    diffHtml += '</div>';
+    
+    return diffHtml;
+}
+
+function downloadConfiguration() {
+    const activeView = document.querySelector('.config-view.active');
+    if (!activeView) {
+        alert('No configuration to download');
+        return;
+    }
+    
+    const configContent = activeView.querySelector('pre code').textContent;
+    const experimentName = '{{ experiment.name }}';
+    const experimentId = '{{ experiment.id }}';
+    
+    // Determine filename based on active view
+    let filename = `experiment_${experimentId}_config.yaml`;
+    if (activeView.id === 'originalConfigView') {
+        filename = `experiment_${experimentId}_original_config.yaml`;
+    } else if (activeView.id === 'currentConfigView') {
+        filename = `experiment_${experimentId}_modified_config.yaml`;
+    }
+    
+    // Create and download file
+    const blob = new Blob([configContent], { type: 'text/yaml;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 </script>
 
 <style>
@@ -1074,6 +1345,127 @@ code {
 
 #experimentLogsContent::-webkit-scrollbar-thumb:hover {
     background: #868e96;
+}
+
+/* Configuration View Styles */
+.config-view-container {
+    position: relative;
+    min-height: 300px;
+}
+
+.config-view {
+    width: 100%;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.config-view:not(.active) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+}
+
+.config-view.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+/* Diff View Styles */
+.diff-container {
+    min-height: 200px;
+}
+
+.diff-content {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.unified-diff {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.diff-line {
+    display: flex;
+    padding: 2px 4px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 1px 0;
+    border-radius: 2px;
+}
+
+.diff-line.added {
+    background-color: rgba(25, 135, 84, 0.1);
+    border-left: 3px solid #198754;
+}
+
+.diff-line.removed {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-left: 3px solid #dc3545;
+}
+
+.diff-line.unchanged {
+    background-color: transparent;
+}
+
+.diff-line .line-number {
+    display: inline-block;
+    width: 40px;
+    padding-right: 8px;
+    text-align: right;
+    user-select: none;
+    font-size: 0.75rem;
+}
+
+.diff-line .line-content {
+    flex: 1;
+    padding-left: 8px;
+}
+
+.diff-line.added .line-content {
+    color: #198754;
+    font-weight: 500;
+}
+
+.diff-line.removed .line-content {
+    color: #dc3545;
+    font-weight: 500;
+}
+
+.unified-diff::-webkit-scrollbar {
+    width: 6px;
+}
+
+.unified-diff::-webkit-scrollbar-track {
+    background: #f1f3f4;
+}
+
+.unified-diff::-webkit-scrollbar-thumb {
+    background: #c1c8cd;
+    border-radius: 3px;
+}
+
+.unified-diff::-webkit-scrollbar-thumb:hover {
+    background: #a1a8ad;
+}
+
+/* Button group improvements for configuration views */
+.btn-group .btn {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.btn-group .btn.active {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 </style>
 {% endblock %} 
