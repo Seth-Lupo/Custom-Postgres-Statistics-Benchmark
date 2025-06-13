@@ -15,10 +15,15 @@ class StatsSourceConfig:
         self.name = config_data.get('name', 'default')
         self.description = config_data.get('description', '')
         self.settings = config_data.get('settings', {})
+        self.data = config_data.get('data', {})
     
     def get_setting(self, key: str, default=None):
         """Get a configuration setting with optional default."""
         return self.settings.get(key, default)
+    
+    def get_data(self, key: str, default=None):
+        """Get a configuration data with optional default."""
+        return self.data.get(key, default)
 
 
 class StatsSource(ABC):

@@ -7,3 +7,5 @@ settings:
   reset_counters: true
   work_mem: "16MB"
   maintenance_work_mem: "16MB" 
+data:
+  message: "This is a test message."

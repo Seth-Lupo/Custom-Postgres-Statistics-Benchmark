@@ -176,7 +176,7 @@
                 </div>
                 <div class="card-body">
                     <pre id="progress-log" style="height: 300px; overflow-y: auto;" class="mb-0 bg-light p-3"></pre>
-                    <div hx-sse="connect:/experiment/stream/{{ experiment_id }}" style="display: none;">
+                    <div hx-sse="connect:/experiment/stream/{{ experiment_id }}" style="display: none; ">
                         <div hx-sse="swap:message" style="display: none;"></div>
                     </div>
                 </div>

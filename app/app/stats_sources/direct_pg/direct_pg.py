@@ -11,6 +11,9 @@ class DirectPgStatsSource(StatsSource):
     
     def apply_statistics(self, session: Session) -> None:
         """Run ANALYZE to ensure built-in statistics are up-to-date."""
+        self.logger.info("Applying statistics to PostgreSQL. THIS IS A TEST LOG.")
+        self.logger.info(f"Config: {self.config.get_data('message')}")
+
         self.logger.info(f"Applying {self.name()} - using PostgreSQL's built-in statistics")
         self.logger.debug("No custom statistics modifications needed - using direct PostgreSQL analysis")
         super().apply_statistics(session)
