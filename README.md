@@ -155,11 +155,17 @@ To create a new statistics source:
 
     Example `my_config.yaml`:
     ```yaml
-    name: "My Awesome Config"
-    description: "An example configuration for my awesome source."
+    name: default
+    description: "Default PostgreSQL built-in statistics configuration"
     settings:
-      my_custom_setting: "value123"
-      analyze_verbose: false
+        analyze_verbose: true
+        analyze_timeout_seconds: 300
+        clear_caches: true
+        reset_counters: true
+        work_mem: "16MB"
+        maintenance_work_mem: "16MB" 
+    data:
+        message: "This is a test message. Settings are generally determine the enviroment, but data is for other aspects of the program (epsilon, prompts, etc)"
     ```
 
 4.  **Import the New Source**:

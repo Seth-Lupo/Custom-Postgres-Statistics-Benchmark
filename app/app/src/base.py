@@ -91,6 +91,18 @@ class StatsSource(ABC):
         config_path = self._get_config_path(f"{config_name}.yaml")
         return self._load_config_from_file(config_path)
     
+    def get_config_content(self, config_name: str) -> str:
+        """Get the raw content of a configuration file."""
+        config_path = self._get_config_path(f"{config_name}.yaml")
+        if not config_path.exists():
+            return ""
+        try:
+            with open(config_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            self.logger.error(f"Failed to read config file {config_path}: {str(e)}")
+            return ""
+    
     def clear_caches(self, session: Session) -> None:
         """Clear PostgreSQL caches and buffers."""
         if not self.config.get_setting('clear_caches', True):
