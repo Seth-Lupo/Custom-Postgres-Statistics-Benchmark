@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PostgreSQL Statistics Benchmarking Platform{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    
+    {% block head %}{% endblock %}
+    
+    <style>
+        /* Core styles */
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            box-shadow: 0 2px 4px rgba(0,0,0,.1);
+        }
+        .container {
+            max-width: 1200px;
+        }
+        
+        /* Progress and loading states */
+        .progress {
+            height: 25px;
+            background-color: #e9ecef;
+            border-radius: 0.5rem;
+        }
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 200ms ease-in;
+        }
+        .htmx-request .htmx-indicator {
+            opacity: 1
+        }
+        .htmx-request.htmx-indicator {
+            opacity: 1
+        }
+        
+        /* Cards and containers */
+        .chart-container {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075);
+            margin: 1rem 0;
+        }
+        .card {
+            border-radius: 0.5rem;
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075);
+        }
+        
+        /* Alerts and notifications */
+        .alert {
+            border-radius: 0.5rem;
+            border: none;
+            margin: 1rem 0;
+        }
+        
+        /* Pre-formatted text handling */
+        pre {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Navigation active states */
+        .nav-link.active {
+            font-weight: 500;
+            color: #0d6efd !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="/static/favicon.png" alt="Database Icon" class="me-2" style="width: 24px; height: 24px;">
+                PG Stats Benchmarking
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.url.path == '/upload' }}" href="/upload">
+                            <i class="bi bi-cloud-upload me-1"></i> Upload Files
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.url.path == '/experiment' }}" href="/experiment">
+                            <i class="bi bi-play-circle me-1"></i> Run Experiment
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.url.path == '/results' }}" href="/results">
+                            <i class="bi bi-graph-up me-1"></i> View Results
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container py-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Loading Indicator Template -->
+    <template id="loading-indicator">
+        <div class="d-flex justify-content-center align-items-center p-4">
+            <div class="spinner"></div>
+        </div>
+    </template>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- HTMX Enhancement Script -->
+    <script>
+        // Configure HTMX defaults
+        htmx.config.defaultSwapStyle = 'innerHTML';
+        htmx.config.defaultSettleDelay = 100;
+        
+        // Add loading indicators to HTMX requests
+        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+            const target = evt.detail.target;
+            if (!target.querySelector('.htmx-indicator')) {
+                const template = document.getElementById('loading-indicator');
+                const indicator = template.content.cloneNode(true);
+                indicator.firstElementChild.classList.add('htmx-indicator');
+                target.appendChild(indicator);
+            }
+        });
+        
+        // Clean up any text formatting issues
+        document.body.addEventListener('htmx:afterSettle', function(evt) {
+            const target = evt.detail.target;
+            // Clean up any pre elements
+            target.querySelectorAll('pre').forEach(pre => {
+                pre.innerHTML = pre.innerHTML.trim();
+            });
+        });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

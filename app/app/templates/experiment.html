@@ -1,0 +1,749 @@
+{% extends "base.html" %}
+
+{% block title %}Run Experiment - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h2 mb-0">
+            <i class="bi bi-play-circle me-2"></i>
+            Run Experiment
+        </h1>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="/">Home</a></li>
+                <li class="breadcrumb-item active">Run Experiment</li>
+            </ol>
+        </nav>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0 flex-grow-1">Configure Experiment</h5>
+            </div>
+        </div>
+        <div class="card-body">
+            <form hx-post="/experiment" hx-target="#experiment-container" hx-indicator="#submit-spinner"
+                hx-swap="innerHTML show:top" class="needs-validation" id="experiment-form" novalidate>
+                <div class="row">
+                    <div class="col-9 mb-3">
+                        <label for="experiment_name" class="form-label">
+                            <i class="bi bi-tag me-1"></i>
+                            Experiment Name
+                        </label>
+                        <input type="text" class="form-control" id="experiment_name" name="experiment_name"
+                            placeholder="Enter a descriptive name for this experiment" required>
+                        <div class="form-text">Give your experiment a unique, descriptive name</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="iterations" class="form-label">
+                            <i class="bi bi-arrow-repeat me-1"></i>
+                            Number of Iterations
+                        </label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="iterations" name="iterations" value="10" min="1" max="10000"
+                                required>
+                            <span class="input-group-text">times</span>
+                        </div>
+                        <div class="form-text">Number of trials (1-10000)</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="dump_file" class="form-label">
+                            <i class="bi bi-database-fill me-1"></i>
+                            Database Dump File
+                        </label>
+                        <select class="form-select" id="dump_file" name="dump_file" required>
+                            <option value="" disabled selected>Select a dump file</option>
+                            {% for file in dump_files %}
+                            <option value="{{ file }}">{{ file }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose the database dump to restore before running the experiment</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="query_file" class="form-label">
+                            <i class="bi bi-file-earmark-code me-1"></i>
+                            Query File
+                        </label>
+                        <select class="form-select" id="query_file" name="query_file" required>
+                            <option value="" disabled selected>Select a query file</option>
+                            {% for file in query_files %}
+                            <option value="{{ file }}">{{ file }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose the SQL queries file to benchmark</div>
+                    </div>
+                   
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="stats_source" class="form-label">
+                            <i class="bi bi-database me-1"></i>
+                            Statistics Source
+                        </label>
+                        <select class="form-select" id="stats_source" name="stats_source" required
+                            onchange="loadConfigurations(this.value)">
+                            <option value="" disabled selected>Select a statistics source</option>
+                            {% for key, name in src %}
+                            <option value="{{ key }}">{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose the statistics source to use for query planning</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="config_name" class="form-label">
+                            <i class="bi bi-gear me-1"></i>
+                            Configuration
+                        </label>
+                        <div class="input-group">
+                            <select class="form-select" id="config_name" name="config_name" disabled>
+                                <option value="" disabled selected>Select a statistics source first</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-secondary" id="edit-config-btn" disabled
+                                onclick="openConfigEditor()">
+                                <i class="bi bi-pencil-square me-1"></i>
+                                Edit
+                            </button>
+                        </div>
+                        <div class="form-text">Choose the configuration for the selected statistics source</div>
+                        <!-- Hidden field to store the edited YAML configuration -->
+                        <input type="hidden" id="config_yaml" name="config_yaml" value="">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="stats_reset_strategy" class="form-label">
+                            <i class="bi bi-bootstrap-reboot me-1"></i>
+                            Statistics Reset Strategy
+                        </label>
+                        <select class="form-select" id="stats_reset_strategy" name="stats_reset_strategy" required>
+                            <option value="once" selected>Apply statistics once before all trials</option>
+                            <option value="per_trial">Reset and apply statistics before each trial</option>
+                        </select>
+                        <div class="form-text">Choose when to apply/reset database statistics</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="transaction_handling" class="form-label">
+                            <i class="bi bi-database-exclamation me-1"></i>
+                            Transaction Handling
+                        </label>
+                        <select class="form-select" id="transaction_handling" name="transaction_handling" required>
+                            <option value="rollback" selected>Rollback changes after each trial</option>
+                            <option value="persist">Allow persistent changes to test database</option>
+                        </select>
+                        <div class="form-text">Choose how to handle query changes to the database</div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary" id="run-experiment-btn">
+                        <span id="submit-spinner" class="spinner-border spinner-border-sm me-2 htmx-indicator"
+                            role="status" aria-hidden="true"></span>
+                        <i class="bi bi-play-fill me-1"></i>
+                        Run Experiment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="experiment-container" class="mt-4">
+        {% if experiment_id %}
+        <div id="experiment-result">
+            <div class="alert alert-info">
+                <strong>Experiment Started!</strong> Running {{ iterations }} iterations with {{ stats_source }}...<br>
+                <span class="text-muted">Dump: {{ dump_file }} | Query: {{ query_file }}</span>
+            </div>
+            <div class="progress mb-3">
+                <div class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0"
+                    aria-valuemax="100">0%</div>
+            </div>
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Experiment Progress</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary active"
+                            onclick="setLogLevel('info', this)">Info</button>
+                        <button type="button" class="btn btn-outline-warning"
+                            onclick="setLogLevel('warning', this)">Warnings</button>
+                        <button type="button" class="btn btn-outline-danger"
+                            onclick="setLogLevel('error', this)">Errors</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <pre id="progress-log" style="height: 300px; overflow-y: auto;" class="mb-0 bg-light p-3"></pre>
+                    <div hx-sse="connect:/experiment/stream/{{ experiment_id }}" style="display: none; ">
+                        <div hx-sse="swap:message" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- Configuration Editor Modal -->
+<div class="modal fade" id="configEditorModal" tabindex="-1" aria-labelledby="configEditorModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configEditorModalLabel">
+                    <i class="bi bi-gear me-2"></i>
+                    Configuration Editor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="yaml-editor" class="form-label">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                YAML Configuration
+                            </label>
+                            <textarea class="form-control" id="yaml-editor" rows="20"
+                                style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;"></textarea>
+                            <div class="form-text">Edit the configuration settings in YAML format</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Configuration Info
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <strong>Source:</strong> <span id="config-source-name">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Original Config:</strong> <span id="config-original-name">-</span>
+                                </div>
+                                <div class="mb-3">
+                                    <strong>Status:</strong> <span id="config-status"
+                                        class="badge bg-secondary">Ready</span>
+                                </div>
+                                <div class="alert alert-info">
+                                    <small>
+                                        <i class="bi bi-lightbulb me-1"></i>
+                                        <strong>Tip:</strong> Changes will be saved with your experiment and can be
+                                        viewed in the results.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card mt-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-list-check me-1"></i>
+                                    Common Settings
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><code>analyze_verbose</code> - Enable verbose analyze output</li>
+                                    <li><code>analyze_timeout_seconds</code> - Timeout for operations</li>
+                                    <li><code>clear_caches</code> - Clear database caches</li>
+                                    <li><code>work_mem</code> - Memory for operations</li>
+                                    <li><code>min_stats_value</code> - Min random stats (random only)</li>
+                                    <li><code>max_stats_value</code> - Max random stats (random only)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-primary" onclick="resetConfiguration()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>
+                    Reset to Original
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveConfiguration()">
+                    <i class="bi bi-check2 me-1"></i>
+                    Save Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentLogLevel = 'info';
+    let logHistory = [];
+    let streamClosed = false;
+    let originalYamlConfig = '';
+    let currentStatsSource = '';
+
+    function loadConfigurations(statsSource) {
+        const configSelect = document.getElementById('config_name');
+        const editButton = document.getElementById('edit-config-btn');
+
+        if (!statsSource) {
+            configSelect.disabled = true;
+            editButton.disabled = true;
+            configSelect.innerHTML = '<option value="" disabled selected>Select a statistics source first</option>';
+            return;
+        }
+
+        currentStatsSource = statsSource;
+
+        // Show loading state
+        configSelect.disabled = true;
+        editButton.disabled = true;
+        configSelect.innerHTML = '<option value="" disabled selected>Loading configurations...</option>';
+
+        // Fetch configurations for the selected stats source
+        fetch(`/experiment/configs/${statsSource}`)
+            .then(response => response.json())
+            .then(data => {
+                configSelect.innerHTML = '';
+
+                if (data.error) {
+                    configSelect.innerHTML = '<option value="" disabled selected>Error loading configurations</option>';
+                    console.error('Error loading configurations:', data.error);
+                    return;
+                }
+
+                if (!data.configs || data.configs.length === 0) {
+                    configSelect.innerHTML = '<option value="" disabled selected>No configurations available</option>';
+                    return;
+                }
+
+                // Add default option
+                configSelect.innerHTML = '<option value="" disabled selected>Select a configuration</option>';
+
+                // Add configurations
+                data.configs.forEach(([key, description]) => {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = description;
+                    if (key === 'default') {
+                        option.selected = true;
+                    }
+                    configSelect.appendChild(option);
+                });
+
+                configSelect.disabled = false;
+                editButton.disabled = false;
+
+                // Load default configuration if available
+                if (configSelect.value || configSelect.querySelector('option[value="default"]')) {
+                    const selectedConfig = configSelect.value || 'default';
+                    loadConfigurationYaml(statsSource, selectedConfig);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching configurations:', error);
+                configSelect.innerHTML = '<option value="" disabled selected>Error loading configurations</option>';
+            });
+    }
+
+    function loadConfigurationYaml(statsSource, configName) {
+        fetch(`/experiment/configs/${statsSource}/${configName}/yaml`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error loading YAML:', data.error);
+                    return;
+                }
+                originalYamlConfig = data.yaml;
+                // Clear any custom YAML since we're loading a predefined config
+                document.getElementById('config_yaml').value = '';
+
+                // Reset edit button state
+                const editButton = document.getElementById('edit-config-btn');
+                editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit';
+                editButton.classList.remove('btn-outline-success', 'btn-outline-warning');
+                editButton.classList.add('btn-outline-secondary');
+            })
+            .catch(error => {
+                console.error('Error fetching YAML:', error);
+            });
+    }
+
+    function openConfigEditor() {
+        const configSelect = document.getElementById('config_name');
+        const selectedConfig = configSelect.value;
+
+        if (!selectedConfig || !currentStatsSource) {
+            alert('Please select a configuration first.');
+            return;
+        }
+
+        // Update modal info
+        document.getElementById('config-source-name').textContent = currentStatsSource;
+        document.getElementById('config-original-name').textContent = selectedConfig;
+
+        // Check if we have custom YAML already saved
+        const customYaml = document.getElementById('config_yaml').value;
+
+        if (customYaml && customYaml.trim()) {
+            // Load the previously edited YAML
+            document.getElementById('yaml-editor').value = customYaml;
+            document.getElementById('config-status').textContent = 'Modified';
+            document.getElementById('config-status').className = 'badge bg-warning';
+        } else {
+            // Load the original YAML
+            document.getElementById('yaml-editor').value = originalYamlConfig;
+            document.getElementById('config-status').textContent = 'Unchanged';
+            document.getElementById('config-status').className = 'badge bg-secondary';
+        }
+
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('configEditorModal'));
+        modal.show();
+    }
+
+    function resetConfiguration() {
+        document.getElementById('yaml-editor').value = originalYamlConfig;
+        document.getElementById('config-status').textContent = 'Unchanged';
+        document.getElementById('config-status').className = 'badge bg-secondary';
+
+        // Clear the hidden config_yaml field to remove custom configuration
+        document.getElementById('config_yaml').value = '';
+
+        // Reset edit button state
+        const editButton = document.getElementById('edit-config-btn');
+        editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit';
+        editButton.classList.remove('btn-outline-success', 'btn-outline-warning');
+        editButton.classList.add('btn-outline-secondary');
+    }
+
+    function saveConfiguration() {
+        const yamlContent = document.getElementById('yaml-editor').value.trim();
+
+        if (!yamlContent) {
+            alert('Configuration cannot be empty.');
+            return;
+        }
+
+        // Validate YAML syntax (basic check)
+        try {
+            // This is a simple check - the backend will do proper validation
+            if (!yamlContent.includes('name:') || !yamlContent.includes('settings:')) {
+                throw new Error('Configuration must include name and settings sections');
+            }
+        } catch (error) {
+            alert('Invalid YAML configuration: ' + error.message);
+            return;
+        }
+
+        // Check if the configuration has actually changed from the original
+        const isActuallyModified = yamlContent.trim() !== originalYamlConfig.trim();
+
+        // Store the edited YAML in the hidden field
+        document.getElementById('config_yaml').value = yamlContent;
+
+        // Update status and button based on whether config was actually modified
+        const statusElement = document.getElementById('config-status');
+        const editButton = document.getElementById('edit-config-btn');
+
+        if (isActuallyModified) {
+            statusElement.textContent = 'Modified';
+            statusElement.className = 'badge bg-warning';
+            editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
+            editButton.classList.remove('btn-outline-secondary');
+            editButton.classList.add('btn-outline-warning');
+        } else {
+            statusElement.textContent = 'Unchanged';
+            statusElement.className = 'badge bg-secondary';
+            document.getElementById('config_yaml').value = '';
+            editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit';
+            editButton.classList.remove('btn-outline-warning');
+            editButton.classList.add('btn-outline-secondary');
+        }
+
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('configEditorModal'));
+        modal.hide();
+    }
+
+    // Add event listener for configuration selection change
+    document.addEventListener('DOMContentLoaded', function () {
+        const configSelect = document.getElementById('config_name');
+        configSelect.addEventListener('change', function () {
+            if (this.value && currentStatsSource) {
+                loadConfigurationYaml(currentStatsSource, this.value);
+            }
+        });
+
+        // Check initial state on page load
+        const editButton = document.getElementById('edit-config-btn');
+        const customYaml = document.getElementById('config_yaml').value;
+
+        if (customYaml && customYaml.trim()) {
+            editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
+            editButton.classList.remove('btn-outline-secondary');
+            editButton.classList.add('btn-outline-warning');
+        }
+    });
+
+    function setLogLevel(level, button) {
+        currentLogLevel = level;
+
+        // Update button states
+        button.parentElement.querySelectorAll('button').forEach(btn => {
+            btn.classList.remove('active', 'btn-secondary');
+            btn.classList.add('btn-outline-secondary');
+        });
+        button.classList.remove('btn-outline-secondary');
+        button.classList.add('active', 'btn-secondary');
+
+        // Filter and display logs
+        const logElement = document.querySelector('pre[id^="progress-log"]');
+        if (logElement) {
+            logElement.innerHTML = filterLogs(logHistory);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+    }
+
+    function filterLogs(logs) {
+        return logs.filter(log => {
+            if (currentLogLevel === 'error') {
+                return log.includes('❌');
+            } else if (currentLogLevel === 'warning') {
+                return log.includes('⚠️') || log.includes('❌');
+            }
+            return true;
+        }).join('\n');
+    }
+
+    function formatTimestamp() {
+        const now = new Date();
+        return now.toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            fractionalSecondDigits: 3
+        });
+    }
+
+    // Form validation
+    document.addEventListener('DOMContentLoaded', function () {
+        const forms = document.querySelectorAll('.needs-validation');
+        Array.from(forms).forEach(form => {
+            form.addEventListener('submit', event => {
+                if (!form.checkValidity()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                form.classList.add('was-validated');
+            }, false);
+        });
+    });
+
+    // HTMX event handling
+    document.addEventListener('htmx:sseMessage', function (event) {
+        if (streamClosed) return;
+
+        const data = JSON.parse(event.detail.data);
+
+        // Update progress bar
+        if (data.progress !== undefined) {
+            const progressBar = document.querySelector('.progress-bar');
+            if (progressBar) {
+                progressBar.style.width = data.progress + '%';
+                progressBar.setAttribute('aria-valuenow', data.progress);
+                progressBar.textContent = data.progress + '%';
+
+                // Update progress bar color based on log level
+                progressBar.className = 'progress-bar';
+                if (data.log_level === 'error') {
+                    progressBar.classList.add('bg-danger');
+                } else if (data.log_level === 'warning') {
+                    progressBar.classList.add('bg-warning', 'text-dark');
+                } else {
+                    progressBar.classList.add('bg-primary');
+                }
+            }
+        }
+
+        // Update messages log
+        if (data.messages) {
+            const logElement = document.querySelector('pre[id^="progress-log"]');
+            if (logElement) {
+                if (data.final_logs) {
+                    // These are final logs from database - replace all logs to ensure consistency
+                    logHistory = [];
+                    data.messages.forEach(message => {
+                        logHistory.push(message);
+                    });
+                } else {
+                    // Regular streaming logs - already have timestamps matching database format
+                    data.messages.forEach(message => {
+                        logHistory.push(message);
+                    });
+                }
+
+                // Display filtered logs (no HTML mixing to avoid double rendering)
+                const filteredLogs = filterLogs(logHistory);
+                logElement.textContent = filteredLogs;
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+        }
+
+        // Handle completion or error
+        if (data.status === 'completed' || data.status === 'error') {
+            // Don't close immediately if this is just final logs
+            if (!data.final_logs) {
+                streamClosed = true;
+                const container = document.querySelector('#experiment-result');
+                if (container) {
+                    // Insert the completion/error message at the top while keeping the progress display
+                    const alertDiv = document.createElement('div');
+                    alertDiv.innerHTML = data.html;
+                    container.insertBefore(alertDiv, container.firstChild);
+
+                    // If it's a completion message, scroll to the "View Results" button
+                    if (data.status === 'completed') {
+                        const viewResultsBtn = alertDiv.querySelector('.btn-primary');
+                        if (viewResultsBtn) {
+                            viewResultsBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+
+                    // Close the SSE connection
+                    const source = event.detail.sse;
+                    if (source) {
+                        source.close();
+                    }
+                }
+            }
+        }
+    });
+
+    // Disable form after experiment starts
+    document.body.addEventListener('htmx:afterRequest', function (evt) {
+        if (evt.detail.successful && evt.detail.target.id === 'experiment-container') {
+            // Check if response contains experiment result div
+            if (evt.detail.xhr.response.includes('experiment-result')) {
+                // Disable the form
+                document.getElementById('experiment-form').querySelectorAll('input, select, button').forEach(el => {
+                    el.disabled = true;
+                });
+                // Update button text to show running state
+                document.getElementById('run-experiment-btn').innerHTML = `
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Experiment Running...
+            `;
+            }
+        }
+    });
+
+    // Re-enable form if there was an error
+    document.body.addEventListener('htmx:responseError', function (evt) {
+        if (evt.detail.target.id === 'experiment-container') {
+            document.getElementById('experiment-form').querySelectorAll('input, select, button').forEach(el => {
+                el.disabled = false;
+            });
+        }
+    });
+</script>
+
+<style>
+    [hx-sse] {
+        display: none;
+    }
+
+    .htmx-indicator {
+        display: none;
+    }
+
+    .htmx-request .htmx-indicator {
+        display: inline-block;
+    }
+
+    pre {
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .btn-group .btn {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.875rem;
+    }
+
+    .progress {
+        height: 1.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.5rem;
+        margin: 1rem 0;
+    }
+
+    .progress-bar {
+        font-size: 0.875rem;
+        line-height: 1.5rem;
+        font-weight: 600;
+        transition: width 0.3s ease;
+    }
+
+    .card {
+        transition: all 0.2s ease-in-out;
+    }
+
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .1) !important;
+    }
+
+    .breadcrumb {
+        background: transparent;
+        margin: 0;
+        padding: 0;
+    }
+
+    .breadcrumb-item a {
+        color: #6c757d;
+        text-decoration: none;
+    }
+
+    .breadcrumb-item a:hover {
+        color: #0d6efd;
+        text-decoration: underline;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: #86b7fe;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+
+    .input-group-text {
+        background-color: #f8f9fa;
+        border-color: #ced4da;
+    }
+
+    .alert {
+        border: none;
+        border-radius: 0.5rem;
+    }
+
+    .alert-link {
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .alert-link:hover {
+        text-decoration: underline;
+    }
+</style>
+{% endblock %}
