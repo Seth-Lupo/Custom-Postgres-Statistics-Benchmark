@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from sqlalchemy import text
-from ..logging_config import stats_logger
+from ..logging_config import stats_logger, stats_source_logger
 from sqlmodel import Session
 import yaml
 import os
@@ -26,6 +26,8 @@ class StatsSource(ABC):
     
     def __init__(self, config: StatsSourceConfig = None):
         self.config = config or self._load_default_config()
+        # Use the specialized stats source logger for frontend integration
+        self.logger = stats_source_logger
     
     def _load_default_config(self) -> StatsSourceConfig:
         """Load the default configuration for this stats source."""
@@ -60,7 +62,7 @@ class StatsSource(ABC):
                 config_data = yaml.safe_load(f)
             return StatsSourceConfig(config_data)
         except Exception as e:
-            stats_logger.error(f"Failed to load config from {config_path}: {str(e)}")
+            self.logger.error(f"Failed to load config from {config_path}: {str(e)}")
             # Return a minimal default config
             return StatsSourceConfig({'name': 'default', 'settings': {}})
     
@@ -75,7 +77,7 @@ class StatsSource(ABC):
                     config = self._load_config_from_file(config_file)
                     configs.append((config_file.stem, config.description or config.name))
                 except Exception as e:
-                    stats_logger.warning(f"Failed to load config {config_file}: {str(e)}")
+                    self.logger.warning(f"Failed to load config {config_file}: {str(e)}")
         
         return configs
     
@@ -87,11 +89,11 @@ class StatsSource(ABC):
     def clear_caches(self, session: Session) -> None:
         """Clear PostgreSQL caches and buffers."""
         if not self.config.get_setting('clear_caches', True):
-            stats_logger.info("Cache clearing disabled by configuration")
+            self.logger.info("Cache clearing disabled by configuration")
             return
             
         try:
-            stats_logger.info("Clearing PostgreSQL caches and buffers")
+            self.logger.info("Clearing PostgreSQL caches and buffers")
             
             # First commit any pending transaction
             session.commit()
@@ -102,6 +104,7 @@ class StatsSource(ABC):
             try:
                 # DISCARD ALL must be run outside a transaction
                 session.execute(text("DISCARD ALL"))
+                self.logger.debug("Executed DISCARD ALL command")
             finally:
                 # Reset autocommit to false for subsequent operations
                 conn.set_session(autocommit=False)
@@ -114,33 +117,38 @@ class StatsSource(ABC):
             session.execute(text(f"SET LOCAL statement_timeout = {timeout * 1000}"))  # Convert to milliseconds
             session.execute(text(f"SET LOCAL work_mem = '{work_mem}'"))
             session.execute(text(f"SET LOCAL maintenance_work_mem = '{maintenance_work_mem}'"))
+            self.logger.debug(f"Configured memory settings: work_mem={work_mem}, maintenance_work_mem={maintenance_work_mem}")
             
             # Reset various PostgreSQL statistics counters if enabled
             if self.config.get_setting('reset_counters', True):
                 session.execute(text("SELECT pg_stat_reset()"))
                 session.execute(text("SELECT pg_stat_reset_shared('bgwriter')"))
                 session.execute(text("SELECT pg_stat_reset_single_table_counters(0)"))
+                self.logger.debug("Reset PostgreSQL statistics counters")
             
             # Attempt to clear statement statistics if extension is available
             try:
                 session.execute(text("SELECT pg_stat_statements_reset()"))
+                self.logger.debug("Reset pg_stat_statements statistics")
             except Exception:
-                stats_logger.debug("pg_stat_statements extension not available, skipping reset")
+                self.logger.debug("pg_stat_statements extension not available, skipping reset")
             
             session.commit()
-            stats_logger.info("Successfully cleared caches and buffers")
+            self.logger.info("Successfully cleared caches and buffers")
         except Exception as e:
-            stats_logger.error(f"Failed to clear caches: {str(e)}")
+            self.logger.error(f"Failed to clear caches: {str(e)}")
             session.rollback()
             raise
     
     def apply_statistics(self, session: Session) -> None:
         """Apply statistics to the database."""
         try:
+            self.logger.info(f"Starting statistics application for {self.name()}")
+            
             # First clear all caches
             self.clear_caches(session)
             
-            stats_logger.info("Running ANALYZE to update statistics")
+            self.logger.info("Running ANALYZE to update statistics")
             
             # Use verbose mode if configured
             analyze_verbose = self.config.get_setting('analyze_verbose', True)
@@ -148,9 +156,10 @@ class StatsSource(ABC):
             
             session.execute(analyze_stmt)
             session.commit()
-            stats_logger.info("ANALYZE completed successfully")
+            self.logger.info("ANALYZE completed successfully")
+            self.logger.info(f"Statistics application for {self.name()} completed successfully")
         except Exception as e:
-            stats_logger.error(f"Failed to run ANALYZE: {str(e)}")
+            self.logger.error(f"Failed to run ANALYZE: {str(e)}")
             session.rollback()
             raise
     

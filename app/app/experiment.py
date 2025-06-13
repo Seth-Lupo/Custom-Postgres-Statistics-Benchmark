@@ -9,7 +9,7 @@ from .models import Experiment, Trial
 from .stats_sources.base import StatsSource, StatsSourceConfig
 from .stats_sources.direct_pg import DirectPgStatsSource
 from .stats_sources.random_pg import RandomPgStatsSource
-from .logging_config import experiment_logger, query_logger, stats_logger
+from .logging_config import experiment_logger, query_logger, stats_logger, stats_source_logger
 from .database import create_database, drop_database, load_dump, get_db_session
 from sqlmodel import Session
 from datetime import datetime
@@ -58,6 +58,18 @@ class ExperimentRunner:
             """Log message and call the progress callback."""
             experiment_logs.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}")
             progress_callback(message, current, total)
+        
+        def stats_source_stream_callback(log_level: str, message: str):
+            """Callback to capture stats source logs and stream them to frontend."""
+            formatted_msg = f"[Stats] {message}"
+            experiment_logs.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {formatted_msg}")
+            # Also call the progress callback to stream to frontend (use current iteration count)
+            current_iter = len([log for log in experiment_logs if "Trial" in log and "completed" in log])
+            progress_callback(formatted_msg, current_iter, iterations)
+        
+        # Set up stats source logging stream
+        stats_source_logger.stream_handler.clear_experiment_logs()
+        stats_source_logger.stream_handler.set_stream_callback(stats_source_stream_callback)
         
         """Run a complete experiment and return the result."""
         experiment_logger.info(f"Starting new experiment with {stats_source} stats source")
@@ -303,6 +315,13 @@ class ExperimentRunner:
             
             # Save logs and mark as successful
             experiment.exit_status = "SUCCESS"
+            
+            # Capture any remaining stats source logs and add them to experiment logs
+            stats_source_logs = stats_source_logger.stream_handler.get_experiment_logs()
+            for log in stats_source_logs:
+                if log not in experiment_logs:
+                    experiment_logs.append(log)
+                    
             experiment.experiment_logs = '\n'.join(experiment_logs)
             session.commit()
             session.refresh(experiment)
@@ -319,6 +338,13 @@ class ExperimentRunner:
             # Update experiment with failure status and logs
             try:
                 experiment.exit_status = "FAILURE"
+                
+                # Capture any remaining stats source logs and add them to experiment logs
+                stats_source_logs = stats_source_logger.stream_handler.get_experiment_logs()
+                for log in stats_source_logs:
+                    if log not in experiment_logs:
+                        experiment_logs.append(log)
+                        
                 experiment.experiment_logs = '\n'.join(experiment_logs)
                 session.commit()
             except Exception:
@@ -326,6 +352,10 @@ class ExperimentRunner:
             
             raise
         finally:
+            # Clean up stats source logging
+            stats_source_logger.stream_handler.set_stream_callback(None)
+            stats_source_logger.stream_handler.clear_experiment_logs()
+            
             if experiment_db_session_generator:
                 try:
                     # Ensure the generator is closed, which also closes the session
