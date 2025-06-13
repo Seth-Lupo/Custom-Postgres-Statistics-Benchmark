@@ -570,50 +570,54 @@
         }
 
         // Update messages log
-        if (data.messages && data.html) {
+        if (data.messages) {
             const logElement = document.querySelector('pre[id^="progress-log"]');
             if (logElement) {
-                data.messages.forEach(message => {
-                    const timestamp = formatTimestamp();
-                    const logEntry = `[${timestamp}] ${message}`;
-                    logHistory.push(logEntry);
-                });
-
-                // Display filtered logs with HTML formatting
-                const filteredLogs = filterLogs(logHistory);
-                logElement.innerHTML = filteredLogs;
-
-                // Append the new HTML message at the bottom
-                if (data.html) {
-                    logElement.innerHTML += '\n' + data.html;
+                if (data.final_logs) {
+                    // These are final logs from database - replace all logs to ensure consistency
+                    logHistory = [];
+                    data.messages.forEach(message => {
+                        logHistory.push(message);
+                    });
+                } else {
+                    // Regular streaming logs - already have timestamps matching database format
+                    data.messages.forEach(message => {
+                        logHistory.push(message);
+                    });
                 }
 
+                // Display filtered logs (no HTML mixing to avoid double rendering)
+                const filteredLogs = filterLogs(logHistory);
+                logElement.textContent = filteredLogs;
                 logElement.scrollTop = logElement.scrollHeight;
             }
         }
 
         // Handle completion or error
         if (data.status === 'completed' || data.status === 'error') {
-            streamClosed = true;
-            const container = document.querySelector('#experiment-result');
-            if (container) {
-                // Insert the completion/error message at the top while keeping the progress display
-                const alertDiv = document.createElement('div');
-                alertDiv.innerHTML = data.html;
-                container.insertBefore(alertDiv, container.firstChild);
+            // Don't close immediately if this is just final logs
+            if (!data.final_logs) {
+                streamClosed = true;
+                const container = document.querySelector('#experiment-result');
+                if (container) {
+                    // Insert the completion/error message at the top while keeping the progress display
+                    const alertDiv = document.createElement('div');
+                    alertDiv.innerHTML = data.html;
+                    container.insertBefore(alertDiv, container.firstChild);
 
-                // If it's a completion message, scroll to the "View Results" button
-                if (data.status === 'completed') {
-                    const viewResultsBtn = alertDiv.querySelector('.btn-primary');
-                    if (viewResultsBtn) {
-                        viewResultsBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // If it's a completion message, scroll to the "View Results" button
+                    if (data.status === 'completed') {
+                        const viewResultsBtn = alertDiv.querySelector('.btn-primary');
+                        if (viewResultsBtn) {
+                            viewResultsBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
                     }
-                }
 
-                // Close the SSE connection
-                const source = event.detail.sse;
-                if (source) {
-                    source.close();
+                    // Close the SSE connection
+                    const source = event.detail.sse;
+                    if (source) {
+                        source.close();
+                    }
                 }
             }
         }

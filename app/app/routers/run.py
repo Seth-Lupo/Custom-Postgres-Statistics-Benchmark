@@ -11,6 +11,7 @@ from fastapi.exception_handlers import RequestValidationError
 from fastapi.exceptions import RequestValidationError
 from sqlmodel import select, Session
 from ..models import Experiment as ExperimentModel
+from datetime import datetime
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
@@ -254,29 +255,37 @@ async def experiment_stream(experiment_id: int):
                 if messages:
                     progress_percent = int((status["progress"] / status["total"]) * 100)
                     
-                    # Determine message level and format HTML
-                    message_html = ""
+                    # Determine log level from messages (consistent approach)
+                    current_log_level = "info"
                     for msg in messages:
-                        css_class = "text-info"
-                        if "❌" in msg:
-                            css_class = "text-danger"
-                            status["log_level"] = "error"
-                        elif "⚠️" in msg:
-                            css_class = "text-warning"
-                            status["log_level"] = "warning"
-                        
-                        message_html += f"<div class='{css_class}'>{msg}</div>"
+                        if "❌" in msg or "ERROR" in msg.upper():
+                            current_log_level = "error"
+                            break
+                        elif "⚠️" in msg or "WARNING" in msg.upper():
+                            current_log_level = "warning"
                     
                     yield "data: " + json.dumps({
                         "messages": messages,
-                        "html": message_html,
                         "progress": progress_percent,
                         "status": "running",
-                        "log_level": status["log_level"]
+                        "log_level": current_log_level
                     }) + "\n\n"
                     status["messages"] = []  # Clear processed messages
             
             elif status["status"] == "completed":
+                # Check if final logs are ready and send them first
+                if status.get("final_logs_ready") and status.get("messages"):
+                    yield "data: " + json.dumps({
+                        "messages": status["messages"],
+                        "progress": 100,
+                        "status": "running",
+                        "log_level": "info",
+                        "final_logs": True
+                    }) + "\n\n"
+                    status["messages"] = []
+                    status["final_logs_ready"] = False
+                    await asyncio.sleep(0.1)  # Small delay to ensure logs are processed
+                
                 exp_id = status["experiment"].id
                 yield "data: " + json.dumps({
                     "status": "completed",
@@ -293,10 +302,23 @@ async def experiment_stream(experiment_id: int):
                 break
             
             elif status["status"] == "error":
+                # Check if final logs are ready and send them first
+                if status.get("final_logs_ready") and status.get("messages"):
+                    yield "data: " + json.dumps({
+                        "messages": status["messages"],
+                        "progress": 100,
+                        "status": "running",
+                        "log_level": "error",
+                        "final_logs": True
+                    }) + "\n\n"
+                    status["messages"] = []
+                    status["final_logs_ready"] = False
+                    await asyncio.sleep(0.1)  # Small delay to ensure logs are processed
+                
                 yield "data: " + json.dumps({
                     "status": "error",
                     "progress": 100,
-                    "log_level": "error",
+                    "log_level": "error", 
                     "html": f"""
                         <div class="alert alert-danger mb-3">
                             <strong>Experiment Failed:</strong> {status.get("error", "Unknown error")}
@@ -305,7 +327,7 @@ async def experiment_stream(experiment_id: int):
                 }) + "\n\n"
                 break
             
-            await asyncio.sleep(0.2)  # Poll every 500ms
+            await asyncio.sleep(0.2)  # Poll every 200ms for better responsiveness
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -320,7 +342,10 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
             status = experiment_status[experiment_id]
             status["progress"] = current
             status["total"] = total
-            status["messages"].append(message)
+            
+            # Send the message as it will be stored in database (with timestamp)
+            timestamped_message = f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}"
+            status["messages"].append(timestamped_message)
             web_logger.debug(f"Experiment {experiment_id} progress: {progress_percent}% - {message}")
 
         web_logger.info(f"Running experiment {experiment_id} in background")
@@ -337,6 +362,22 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
             progress_callback=progress_callback,
             name=name
         )
+        
+        # Send final logs from database to frontend before marking as completed
+        if experiment.experiment_logs:
+            # Parse the database logs and send them to frontend to ensure consistency
+            db_log_lines = experiment.experiment_logs.split('\n')
+            status = experiment_status[experiment_id]
+            
+            # Clear any existing messages and send the complete database logs
+            status["messages"] = []
+            for log_line in db_log_lines:
+                if log_line.strip():  # Skip empty lines
+                    status["messages"].append(log_line.strip())
+            
+            # Set final status flag to indicate these are the final logs
+            status["final_logs_ready"] = True
+        
         experiment_status[experiment_id]["status"] = "completed"
         experiment_status[experiment_id]["experiment"] = experiment
         web_logger.info(f"Experiment {experiment_id} completed successfully.")
@@ -345,6 +386,22 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         web_logger.error(f"Experiment {experiment_id} failed: {e}")
         experiment_status[experiment_id]["status"] = "error"
         experiment_status[experiment_id]["error"] = str(e)
+        
+        # Also send final logs for failed experiments if available
+        try:
+            from sqlmodel import select
+            failed_experiment = db.execute(select(ExperimentModel).where(ExperimentModel.name == name)).scalar_one_or_none()
+            if failed_experiment and failed_experiment.experiment_logs:
+                db_log_lines = failed_experiment.experiment_logs.split('\n')
+                status = experiment_status[experiment_id]
+                status["messages"] = []
+                for log_line in db_log_lines:
+                    if log_line.strip():
+                        status["messages"].append(log_line.strip())
+                status["final_logs_ready"] = True
+        except Exception:
+            pass  # Don't fail the error handling if we can't get logs
+            
     except Exception as e:
         import traceback
         tb = traceback.format_exc()

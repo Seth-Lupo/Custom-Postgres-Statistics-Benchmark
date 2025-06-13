@@ -56,13 +56,16 @@ class ExperimentRunner:
         
         def log_and_callback(message: str, current: int, total: int):
             """Log message and call the progress callback."""
-            experiment_logs.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}")
+            timestamped_message = f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}"
+            experiment_logs.append(timestamped_message)
+            # Pass the raw message to progress callback (it will add its own timestamp)
             progress_callback(message, current, total)
         
         def stats_source_stream_callback(log_level: str, message: str):
             """Callback to capture stats source logs and stream them to frontend."""
             formatted_msg = f"[Stats] {message}"
-            experiment_logs.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {formatted_msg}")
+            timestamped_message = f"[{datetime.utcnow().strftime('%H:%M:%S')}] {formatted_msg}"
+            experiment_logs.append(timestamped_message)
             # Also call the progress callback to stream to frontend (use current iteration count)
             current_iter = len([log for log in experiment_logs if "Trial" in log and "completed" in log])
             progress_callback(formatted_msg, current_iter, iterations)
