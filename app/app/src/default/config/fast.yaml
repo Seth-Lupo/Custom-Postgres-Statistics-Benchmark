@@ -7,3 +7,5 @@ settings:
   reset_counters: false
   work_mem: "8MB"
   maintenance_work_mem: "8MB" 
+data:
+  message: "This is a test message. Settings are generally determine the enviroment, but data is for other aspects of the program (epsilon, prompts, etc)"

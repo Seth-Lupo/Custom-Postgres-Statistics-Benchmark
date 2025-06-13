@@ -2,7 +2,7 @@ from sqlalchemy import text
 from ..base import StatsSource, StatsSourceConfig
 from sqlmodel import Session
 
-class DirectPgStatsSource(StatsSource):
+class DefaultStatsSource(StatsSource):
     """Statistics source that uses PostgreSQL's built-in statistics."""
     
     def __init__(self, config: StatsSourceConfig = None):

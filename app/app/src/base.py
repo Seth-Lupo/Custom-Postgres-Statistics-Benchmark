@@ -42,7 +42,7 @@ class StatsSource(ABC):
     def _get_config_dir(self) -> Path:
         """Get the configuration directory for this stats source."""
         # Get the directory name from the class name
-        # e.g., DirectPgStatsSource -> direct_pg
+        # e.g., DefaultStatsSource -> direct_pg
         class_name = self.__class__.__name__
         if class_name.endswith('StatsSource'):
             class_name = class_name[:-11]  # Remove 'StatsSource' suffix
