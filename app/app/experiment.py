@@ -75,7 +75,12 @@ class ExperimentRunner:
         # Instantiate stats source with the specified configuration
         source_class = self.stats_sources[stats_source]
         
-        # Determine which configuration to use
+        # Get the original/default configuration YAML for comparison
+        original_config_yaml = None
+        config_modified = False
+        config_modified_at = None
+        
+        # Determine which configuration to use and track modifications
         if config_yaml:
             # Use the custom YAML configuration
             import yaml
@@ -84,6 +89,31 @@ class ExperimentRunner:
                 config = StatsSourceConfig(config_data)
                 stats_source_instance = source_class(config)
                 experiment_logger.info(f"Using custom configuration: {config.name}")
+                
+                # Get the original configuration YAML for comparison
+                if config_name and config_name != 'default':
+                    original_config = source_class().load_config(config_name)
+                    original_stats_source_instance = source_class(original_config)
+                else:
+                    original_stats_source_instance = source_class()
+                
+                # Generate the original YAML
+                if hasattr(original_stats_source_instance.config, 'settings'):
+                    original_config_dict = {
+                        'name': original_stats_source_instance.config.name,
+                        'description': original_stats_source_instance.config.description,
+                        'settings': original_stats_source_instance.config.settings
+                    }
+                    original_config_yaml = yaml.dump(original_config_dict, default_flow_style=False)
+                
+                # Check if configuration was actually modified
+                if original_config_yaml and config_yaml.strip() != original_config_yaml.strip():
+                    config_modified = True
+                    config_modified_at = datetime.utcnow()
+                    experiment_logger.info("Configuration was modified from original")
+                else:
+                    experiment_logger.info("Configuration unchanged from original")
+                    
             except Exception as e:
                 error_msg = f"Failed to parse custom configuration YAML: {str(e)}"
                 experiment_logger.error(error_msg)
@@ -93,15 +123,8 @@ class ExperimentRunner:
             config = source_class().load_config(config_name)
             stats_source_instance = source_class(config)
             experiment_logger.info(f"Using named configuration: {config_name}")
-        else:
-            # Use default configuration
-            stats_source_instance = source_class()
-            experiment_logger.info("Using default configuration")
-        
-        # Store the actual YAML that will be used
-        actual_config_yaml = config_yaml
-        if not actual_config_yaml:
-            # If no custom YAML was provided, get the YAML from the configuration
+            
+            # Get the original YAML for the named configuration
             if hasattr(stats_source_instance.config, 'settings'):
                 import yaml
                 config_dict = {
@@ -109,7 +132,24 @@ class ExperimentRunner:
                     'description': stats_source_instance.config.description,
                     'settings': stats_source_instance.config.settings
                 }
-                actual_config_yaml = yaml.dump(config_dict, default_flow_style=False)
+                original_config_yaml = yaml.dump(config_dict, default_flow_style=False)
+        else:
+            # Use default configuration
+            stats_source_instance = source_class()
+            experiment_logger.info("Using default configuration")
+            
+            # Get the original YAML for the default configuration
+            if hasattr(stats_source_instance.config, 'settings'):
+                import yaml
+                config_dict = {
+                    'name': stats_source_instance.config.name,
+                    'description': stats_source_instance.config.description,
+                    'settings': stats_source_instance.config.settings
+                }
+                original_config_yaml = yaml.dump(config_dict, default_flow_style=False)
+        
+        # Store the actual YAML that will be used
+        actual_config_yaml = config_yaml if config_yaml else original_config_yaml
         
         # Create experiment record
         try:
@@ -119,6 +159,9 @@ class ExperimentRunner:
                 stats_source=stats_source_instance.display_name(),
                 config_name=config_name or 'default',
                 config_yaml=actual_config_yaml,
+                original_config_yaml=original_config_yaml,
+                config_modified=config_modified,
+                config_modified_at=config_modified_at,
                 query=query,
                 iterations=iterations,
                 stats_reset_strategy=stats_reset_strategy,

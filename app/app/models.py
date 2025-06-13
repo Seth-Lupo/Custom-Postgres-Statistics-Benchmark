@@ -10,6 +10,9 @@ class Experiment(SQLModel, table=True):
     stats_source: str = Field(max_length=100)
     config_name: Optional[str] = Field(default=None, max_length=100)
     config_yaml: Optional[str] = Field(default=None)
+    original_config_yaml: Optional[str] = Field(default=None)  # Original config YAML before modifications
+    config_modified: bool = Field(default=False)  # Whether config was modified from original
+    config_modified_at: Optional[datetime] = Field(default=None)  # When config was modified
     query: str
     iterations: int
     stats_reset_strategy: str = Field(default="once", max_length=50)  # "once" or "per_trial"
