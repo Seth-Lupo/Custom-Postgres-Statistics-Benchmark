@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from .models import Experiment, Trial
 from .src.base import StatsSource, StatsSourceConfig
-from .src.default import DirectPgStatsSource
+from .src.direct_pg import DirectPgStatsSource
 from .src.random_pg import RandomPgStatsSource
 from .logging_config import experiment_logger, query_logger, stats_logger, stats_source_logger
 from .database import create_database, drop_database, load_dump, get_db_session
