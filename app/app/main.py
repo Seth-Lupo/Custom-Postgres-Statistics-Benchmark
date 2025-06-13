@@ -7,6 +7,7 @@ from .database import create_db_and_tables, init_db, get_db
 from .routers import upload, run, results
 from sqlmodel import select, Session
 from .models import Experiment
+from markdown_it import MarkdownIt
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -36,6 +37,22 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(upload.router, tags=["upload"])
 app.include_router(run.router, tags=["experiment"])
 app.include_router(results.router, tags=["results"])
+
+
+@app.get("/readme", response_class=HTMLResponse)
+def readme(request: Request):
+    """Display the README.md file."""
+    md = MarkdownIt()
+    with open("README.md", "r") as f:
+        readme_content = f.read()
+    
+    html_content = md.render(readme_content)
+    
+    return templates.TemplateResponse("readme.html", {
+        "request": request,
+        "show_navigation": True,
+        "content": html_content
+    })
 
 
 @app.get("/", response_class=HTMLResponse)
