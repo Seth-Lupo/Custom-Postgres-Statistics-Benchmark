@@ -53,8 +53,8 @@ class StatsSource(ABC):
         snake_case = re.sub('([a-z0-9])([A-Z])', r'\1_\2', snake_case).lower()
         
         # Return the config directory path
-        stats_sources_dir = Path(__file__).parent
-        return stats_sources_dir / snake_case / 'config'
+        src_dir = Path(__file__).parent
+        return src_dir / snake_case / 'config'
     
     def _get_config_path(self, config_name: str) -> Path:
         """Get the full path to a configuration file."""

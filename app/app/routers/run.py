@@ -27,7 +27,7 @@ experiment_status = {}
 def experiment_page(request: Request):
     """Render the experiment page."""
     web_logger.info("Loading experiment page")
-    stats_sources = experiment_runner.get_available_stats_sources()
+    src = experiment_runner.get_available_src()
 
     # List available dump and query files
     uploads_dir = "app/uploads"
@@ -42,7 +42,7 @@ def experiment_page(request: Request):
     queries_not_available = len(query_files) == 0
     return templates.TemplateResponse("experiment.html", {
         "request": request,
-        "stats_sources": stats_sources,
+        "src": src,
         "dump_files": dump_files,
         "query_files": query_files,
         "queries_not_available": queries_not_available,
@@ -68,12 +68,12 @@ def get_configs(stats_source: str):
 def get_config_yaml(stats_source: str, config_name: str):
     """Get the raw YAML content for a specific configuration."""
     try:
-        if stats_source not in experiment_runner.stats_sources:
+        if stats_source not in experiment_runner.src:
             return JSONResponse({
                 "error": f"Unknown stats source: {stats_source}"
             }, status_code=404)
         
-        source_class = experiment_runner.stats_sources[stats_source]
+        source_class = experiment_runner.src[stats_source]
         instance = source_class()
         config_path = instance._get_config_path(f"{config_name}.yaml")
         
@@ -274,17 +274,6 @@ async def experiment_stream(experiment_id: int):
             
             elif status["status"] == "completed":
                 # Check if final logs are ready and send them first
-                if status.get("final_logs_ready") and status.get("messages"):
-                    yield "data: " + json.dumps({
-                        "messages": status["messages"],
-                        "progress": 100,
-                        "status": "running",
-                        "log_level": "info",
-                        "final_logs": True
-                    }) + "\n\n"
-                    status["messages"] = []
-                    status["final_logs_ready"] = False
-                    await asyncio.sleep(0.1)  # Small delay to ensure logs are processed
                 
                 exp_id = status["experiment"].id
                 yield "data: " + json.dumps({
@@ -302,18 +291,7 @@ async def experiment_stream(experiment_id: int):
                 break
             
             elif status["status"] == "error":
-                # Check if final logs are ready and send them first
-                if status.get("final_logs_ready") and status.get("messages"):
-                    yield "data: " + json.dumps({
-                        "messages": status["messages"],
-                        "progress": 100,
-                        "status": "running",
-                        "log_level": "error",
-                        "final_logs": True
-                    }) + "\n\n"
-                    status["messages"] = []
-                    status["final_logs_ready"] = False
-                    await asyncio.sleep(0.1)  # Small delay to ensure logs are processed
+               
                 
                 yield "data: " + json.dumps({
                     "status": "error",
@@ -327,7 +305,7 @@ async def experiment_stream(experiment_id: int):
                 }) + "\n\n"
                 break
             
-            await asyncio.sleep(0.2)  # Poll every 200ms for better responsiveness
+            await asyncio.sleep(0.05)  # Poll every 200ms for better responsiveness
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -363,20 +341,6 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
             name=name
         )
         
-        # Send final logs from database to frontend before marking as completed
-        if experiment.experiment_logs:
-            # Parse the database logs and send them to frontend to ensure consistency
-            db_log_lines = experiment.experiment_logs.split('\n')
-            status = experiment_status[experiment_id]
-            
-            # Clear any existing messages and send the complete database logs
-            status["messages"] = []
-            for log_line in db_log_lines:
-                if log_line.strip():  # Skip empty lines
-                    status["messages"].append(log_line.strip())
-            
-            # Set final status flag to indicate these are the final logs
-            status["final_logs_ready"] = True
         
         experiment_status[experiment_id]["status"] = "completed"
         experiment_status[experiment_id]["experiment"] = experiment
@@ -386,21 +350,6 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         web_logger.error(f"Experiment {experiment_id} failed: {e}")
         experiment_status[experiment_id]["status"] = "error"
         experiment_status[experiment_id]["error"] = str(e)
-        
-        # Also send final logs for failed experiments if available
-        try:
-            from sqlmodel import select
-            failed_experiment = db.execute(select(ExperimentModel).where(ExperimentModel.name == name)).scalar_one_or_none()
-            if failed_experiment and failed_experiment.experiment_logs:
-                db_log_lines = failed_experiment.experiment_logs.split('\n')
-                status = experiment_status[experiment_id]
-                status["messages"] = []
-                for log_line in db_log_lines:
-                    if log_line.strip():
-                        status["messages"].append(log_line.strip())
-                status["final_logs_ready"] = True
-        except Exception:
-            pass  # Don't fail the error handling if we can't get logs
             
     except Exception as e:
         import traceback

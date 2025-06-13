@@ -9,9 +9,9 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
 
 from app.logging_config import stats_source_logger
-from app.stats_sources.random_pg import RandomPgStatsSource
-from app.stats_sources.direct_pg import DirectPgStatsSource
-from app.stats_sources.base import StatsSourceConfig
+from app.src.random_pg import RandomPgStatsSource
+from app.src.direct_pg import DirectPgStatsSource
+from app.src.base import StatsSourceConfig
 
 def demo_frontend_callback(log_level: str, message: str):
     """Simulate frontend callback that receives streamed logs."""

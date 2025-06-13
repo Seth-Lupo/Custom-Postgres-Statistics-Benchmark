@@ -6,9 +6,9 @@ from typing import List, Tuple, Callable, Dict, Any
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from .models import Experiment, Trial
-from .stats_sources.base import StatsSource, StatsSourceConfig
-from .stats_sources.direct_pg import DirectPgStatsSource
-from .stats_sources.random_pg import RandomPgStatsSource
+from .src.base import StatsSource, StatsSourceConfig
+from .src.direct_pg import DirectPgStatsSource
+from .src.random_pg import RandomPgStatsSource
 from .logging_config import experiment_logger, query_logger, stats_logger, stats_source_logger
 from .database import create_database, drop_database, load_dump, get_db_session
 from sqlmodel import Session
@@ -31,21 +31,21 @@ class ExperimentRunner:
     """Handles running benchmarking experiments."""
     
     def __init__(self):
-        self.stats_sources = {
+        self.src = {
             "direct": DirectPgStatsSource,
             "random": RandomPgStatsSource,
         }
     
-    def get_available_stats_sources(self) -> List[Tuple[str, str]]:
+    def get_available_src(self) -> List[Tuple[str, str]]:
         """Get list of available statistics sources as (key, display_name) tuples."""
-        return [(key, source().name()) for key, source in self.stats_sources.items()]
+        return [(key, source().name()) for key, source in self.src.items()]
     
     def get_available_configs(self, stats_source: str) -> List[Tuple[str, str]]:
         """Get list of available configurations for a stats source as (config_name, display_name) tuples."""
-        if stats_source not in self.stats_sources:
+        if stats_source not in self.src:
             return []
         
-        source_class = self.stats_sources[stats_source]
+        source_class = self.src[stats_source]
         instance = source_class()
         return instance.get_available_configs()
     
@@ -82,13 +82,13 @@ class ExperimentRunner:
         experiment_logger.info(f"Transaction handling: {transaction_handling}")
         experiment_logger.info(f"Using temporary database: {db_name} from dump: {dump_path}")
         
-        if stats_source not in self.stats_sources:
+        if stats_source not in self.src:
             error_msg = f"Unknown stats source: {stats_source}"
             experiment_logger.error(error_msg)
             raise ValueError(error_msg)
         
         # Instantiate stats source with the specified configuration
-        source_class = self.stats_sources[stats_source]
+        source_class = self.src[stats_source]
         
         # Get the original/default configuration YAML for comparison
         original_config_yaml = None

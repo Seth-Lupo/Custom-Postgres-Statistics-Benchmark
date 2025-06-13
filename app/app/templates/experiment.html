@@ -88,7 +88,7 @@
                         <select class="form-select" id="stats_source" name="stats_source" required
                             onchange="loadConfigurations(this.value)">
                             <option value="" disabled selected>Select a statistics source</option>
-                            {% for key, name in stats_sources %}
+                            {% for key, name in src %}
                             <option value="{{ key }}">{{ name }}</option>
                             {% endfor %}
                         </select>

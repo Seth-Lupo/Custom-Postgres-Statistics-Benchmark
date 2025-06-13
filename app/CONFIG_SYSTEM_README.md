@@ -13,7 +13,7 @@ Each statistics source has its own directory with:
 ## Directory Structure
 
 ```
-app/stats_sources/
+app/src/
 ├── base.py                    # Base classes
 ├── direct_pg/                 # Built-in PostgreSQL stats
 │   ├── direct_pg.py
