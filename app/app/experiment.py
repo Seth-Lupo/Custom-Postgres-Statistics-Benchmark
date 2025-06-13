@@ -299,28 +299,45 @@ class ExperimentRunner:
         query_logger.debug(f"Starting new trial with query: {query} (transaction handling: {transaction_handling})")
         
         try:
-            # Clear caches before trial
+            # Enhanced cache clearing before trial
             session.commit()  # Commit any pending transaction
+            
+            # Clear all caches comprehensively
+            query_logger.debug("Performing comprehensive cache clearing...")
             
             # These operations need to be outside a transaction
             conn = session.connection().connection
             conn.set_session(autocommit=True)
             try:
+                # Clear all session-level caches and temporary objects
                 session.execute(text("DISCARD ALL"))
+                # Reset all runtime statistics
+                session.execute(text("SELECT pg_stat_reset()"))
+                # Clear shared buffer cache (if possible)
+                try:
+                    session.execute(text("SELECT pg_stat_reset_shared('bgwriter')"))
+                    session.execute(text("SELECT pg_stat_reset_shared('archiver')"))
+                except Exception:
+                    query_logger.debug("Some shared statistics reset operations not available")
+                
+                # Reset pg_stat_statements if available
+                try:
+                    session.execute(text("SELECT pg_stat_statements_reset()"))
+                except Exception:
+                    query_logger.debug("pg_stat_statements extension not available, skipping reset")
+                
             finally:
                 conn.set_session(autocommit=False)
             
-            # These can run inside a transaction
+            # Set session parameters for consistent execution environment
             session.execute(text("SET LOCAL statement_timeout = 0"))
             session.execute(text("SET LOCAL work_mem = '16MB'"))
             session.execute(text("SET LOCAL maintenance_work_mem = '16MB'"))
-            session.execute(text("SELECT pg_stat_reset()"))
-            try:
-                session.execute(text("SELECT pg_stat_statements_reset()"))
-            except Exception:
-                query_logger.debug("pg_stat_statements extension not available, skipping reset")
+            session.execute(text("SET LOCAL effective_cache_size = '1GB'"))
+            session.execute(text("SET LOCAL random_page_cost = 1.0"))
+            session.execute(text("SET LOCAL seq_page_cost = 1.0"))
             session.commit()
-            query_logger.debug("Cleared caches before trial")
+            query_logger.debug("Enhanced cache clearing and environment setup completed")
             
             # Get query plan and cost estimate (this doesn't modify data)
             explain_query = text(f"EXPLAIN (FORMAT JSON) {query}")
@@ -387,12 +404,13 @@ class ExperimentRunner:
     def _capture_statistics_snapshots(self, session: Session) -> Tuple[str, str]:
         """Capture pg_stats and pg_statistic snapshots and return as JSON strings."""
         try:
-            # Capture pg_stats snapshot
+            # Capture pg_stats snapshot (public schema only)
             pg_stats_query = text("""
                 SELECT schemaname, tablename, attname, inherited, null_frac, avg_width, n_distinct,
                        most_common_vals, most_common_freqs, histogram_bounds, correlation, 
                        most_common_elems, most_common_elem_freqs, elem_count_histogram
                 FROM pg_stats 
+                WHERE schemaname = 'public'
                 ORDER BY schemaname, tablename, attname
             """)
             pg_stats_result = session.execute(pg_stats_query)
@@ -415,7 +433,7 @@ class ExperimentRunner:
                     'elem_count_histogram': str(row.elem_count_histogram) if row.elem_count_histogram is not None else None
                 })
             
-            # Capture pg_statistic snapshot  
+            # Capture pg_statistic snapshot (public schema tables only)
             pg_statistic_query = text("""
                 SELECT starelid::regclass AS table_name, staattnum, stainherit, stanullfrac, 
                        stawidth, stadistinct, stakind1, stakind2, stakind3, stakind4, stakind5,
@@ -423,7 +441,10 @@ class ExperimentRunner:
                        stacoll1, stacoll2, stacoll3, stacoll4, stacoll5,
                        stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
                        stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
-                FROM pg_statistic 
+                FROM pg_statistic ps
+                JOIN pg_class pc ON ps.starelid = pc.oid
+                JOIN pg_namespace pn ON pc.relnamespace = pn.oid
+                WHERE pn.nspname = 'public'
                 ORDER BY starelid, staattnum
             """)
             pg_statistic_result = session.execute(pg_statistic_query)
@@ -467,7 +488,7 @@ class ExperimentRunner:
             pg_stats_json = json.dumps(pg_stats_data, default=str)
             pg_statistic_json = json.dumps(pg_statistic_data, default=str)
             
-            stats_logger.debug(f"Captured {len(pg_stats_data)} pg_stats entries and {len(pg_statistic_data)} pg_statistic entries")
+            stats_logger.debug(f"Captured {len(pg_stats_data)} pg_stats entries and {len(pg_statistic_data)} pg_statistic entries (public schema only)")
             
             return pg_stats_json, pg_statistic_json
             

@@ -13,13 +13,21 @@
             </h1>
             <p class="text-muted mb-0">Detailed results for experiment using {{ experiment.stats_source }}</p>
         </div>
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="/">Home</a></li>
-                <li class="breadcrumb-item"><a href="/results">Results</a></li>
-                <li class="breadcrumb-item active">Experiment {{ experiment.id }}</li>
-            </ol>
-        </nav>
+        <div class="d-flex align-items-center">
+            {% if experiment.experiment_logs %}
+            <button type="button" class="btn btn-outline-info me-3" onclick="showExperimentLogs()">
+                <i class="bi bi-journal-text me-1"></i>
+                View Logs
+            </button>
+            {% endif %}
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item"><a href="/results">Results</a></li>
+                    <li class="breadcrumb-item active">Experiment {{ experiment.id }}</li>
+                </ol>
+            </nav>
+        </div>
     </div>
 
     <!-- Quick Stats -->
@@ -496,6 +504,44 @@
         </div>
     </div>
 
+    <!-- Experiment Logs Modal -->
+    <div class="modal fade" id="experimentLogsModal" tabindex="-1" aria-labelledby="experimentLogsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="experimentLogsModalLabel">
+                        <i class="bi bi-journal-text me-2"></i>
+                        Experiment Logs - {{ experiment.name }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary active" onclick="setLogsLogLevel('info', this)">Info</button>
+                            <button type="button" class="btn btn-outline-warning" onclick="setLogsLogLevel('warning', this)">Warnings</button>
+                            <button type="button" class="btn btn-outline-danger" onclick="setLogsLogLevel('error', this)">Errors</button>
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="downloadLogs()">
+                                <i class="bi bi-download me-1"></i>
+                                Download Logs
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <pre id="experimentLogsContent" class="mb-0 bg-dark text-light p-3" style="height: 500px; overflow-y: auto; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace; font-size: 0.875rem; line-height: 1.4;">{{ experiment.experiment_logs or 'No logs available' }}</pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Action Buttons -->
     <div class="d-flex justify-content-between align-items-center mt-4">
         <a href="/results" class="btn btn-outline-secondary">
@@ -706,6 +752,80 @@ function exportStatistics() {
     link.click();
     document.body.removeChild(link);
 }
+
+// Experiment Logs Modal Functions
+let currentLogsLogLevel = 'info';
+let originalLogsContent = '';
+
+function showExperimentLogs() {
+    // Store original logs content
+    const logsElement = document.getElementById('experimentLogsContent');
+    originalLogsContent = logsElement.textContent;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('experimentLogsModal'));
+    modal.show();
+    
+    // Apply current filter
+    filterLogsByLevel();
+}
+
+function setLogsLogLevel(level, button) {
+    currentLogsLogLevel = level;
+    
+    // Update button states
+    button.parentElement.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active', 'btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    });
+    button.classList.remove('btn-outline-secondary');
+    button.classList.add('active', 'btn-secondary');
+    
+    // Filter and display logs
+    filterLogsByLevel();
+}
+
+function filterLogsByLevel() {
+    const logsElement = document.getElementById('experimentLogsContent');
+    const lines = originalLogsContent.split('\n');
+    
+    let filteredLines = lines;
+    
+    if (currentLogsLogLevel === 'error') {
+        filteredLines = lines.filter(line => line.includes('❌') || line.includes('ERROR'));
+    } else if (currentLogsLogLevel === 'warning') {
+        filteredLines = lines.filter(line => 
+            line.includes('⚠️') || line.includes('❌') || 
+            line.includes('WARNING') || line.includes('ERROR')
+        );
+    }
+    // 'info' shows all lines
+    
+    logsElement.textContent = filteredLines.join('\n');
+    logsElement.scrollTop = logsElement.scrollHeight;
+}
+
+function downloadLogs() {
+    const logsContent = document.getElementById('experimentLogsContent').textContent;
+    
+    if (!logsContent || logsContent.trim() === 'No logs available') {
+        alert('No logs to download');
+        return;
+    }
+    
+    // Create and download file
+    const blob = new Blob([logsContent], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    
+    const experimentName = '{{ experiment.name }}';
+    const experimentId = '{{ experiment.id }}';
+    link.download = `experiment_${experimentId}_${experimentName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_logs.txt`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 </script>
 
 <style>
@@ -840,6 +960,33 @@ code {
 .table-responsive {
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
+}
+
+/* Experiment logs modal styling */
+#experimentLogsContent {
+    background-color: #212529 !important;
+    color: #ffffff !important;
+    border-radius: 0.375rem;
+    max-height: 500px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+#experimentLogsContent::-webkit-scrollbar {
+    width: 8px;
+}
+
+#experimentLogsContent::-webkit-scrollbar-track {
+    background: #343a40;
+}
+
+#experimentLogsContent::-webkit-scrollbar-thumb {
+    background: #6c757d;
+    border-radius: 4px;
+}
+
+#experimentLogsContent::-webkit-scrollbar-thumb:hover {
+    background: #868e96;
 }
 </style>
 {% endblock %} 
