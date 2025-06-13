@@ -3,7 +3,6 @@ import statistics
 import traceback
 from typing import List, Tuple, Callable, Dict, Any
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from .models import Experiment, Trial
 from .stats_sources.base import StatsSource
@@ -11,6 +10,8 @@ from .stats_sources.direct_pg import DirectPgStatsSource
 from .stats_sources.random_pg import RandomPgStatsSource
 from .logging_config import experiment_logger, query_logger, stats_logger
 from .database import create_database, drop_database, load_dump, get_db_session
+from sqlmodel import Session
+    
 
 class ExperimentError(Exception):
     """Base class for experiment-related errors."""
@@ -37,7 +38,7 @@ class ExperimentRunner:
         """Get list of available statistics sources as (key, display_name) tuples."""
         return [(key, source.name()) for key, source in self.stats_sources.items()]
     
-    async def run_experiment(self, session: AsyncSession, stats_source: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
+    def run_experiment(self, session: Session, stats_source: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
         
         db_name = "test_database"
         
@@ -52,20 +53,20 @@ class ExperimentRunner:
             experiment_logger.error(error_msg)
             raise ValueError(error_msg)
         
-        stats_source = self.stats_sources[stats_source]
+        stats_source_instance = self.stats_sources[stats_source]
         
         # Create experiment record
         try:
             progress_callback("Creating experiment record...", 0, iterations)
             experiment = Experiment(
                 name=name,
-                stats_source=stats_source.name(),
+                stats_source=stats_source_instance.name(),
                 query=query,
                 iterations=iterations
             )
             session.add(experiment)
-            await session.commit()
-            await session.refresh(experiment)
+            session.commit()
+            session.refresh(experiment)
             experiment_logger.info(f"Created experiment record with ID {experiment.id}")
             
         except SQLAlchemyError as e:
@@ -74,26 +75,27 @@ class ExperimentRunner:
             experiment_logger.debug(traceback.format_exc())
             raise ExperimentError(error_msg) from e
         
+        experiment_db_session_generator = None
         experiment_db_session = None
         try:
             # Create and setup the temporary database
             progress_callback(f"Creating temporary database '{db_name}'...", 0, iterations)
-            await create_database(db_name)
+            create_database(db_name)
             progress_callback(f"Loading data from '{dump_path}'...", 0, iterations)
             load_dump(db_name, dump_path)
 
             # Get a session to the temporary database
             experiment_db_session_generator = get_db_session(db_name)
-            experiment_db_session = await anext(experiment_db_session_generator)
+            experiment_db_session = next(experiment_db_session_generator)
 
             # Apply statistics
-            msg = f"Applying {stats_source.name()} statistics to database..."
+            msg = f"Applying {stats_source_instance.name()} statistics to database..."
             progress_callback(msg, 0, iterations)
             experiment_logger.info(msg)
             
             try:
-                await stats_source.apply_statistics(experiment_db_session)
-                stats_logger.info(f"Successfully applied {stats_source.name()} statistics")
+                stats_source_instance.apply_statistics(experiment_db_session)
+                stats_logger.info(f"Successfully applied {stats_source_instance.name()} statistics")
             except Exception as e:
                 error_msg = f"Failed to apply statistics: {str(e)}"
                 stats_logger.error(error_msg)
@@ -110,7 +112,7 @@ class ExperimentRunner:
                 experiment_logger.info(trial_msg)
                 
                 try:
-                    execution_time, cost_estimate, query_plan = await self._run_single_trial(experiment_db_session, query)
+                    execution_time, cost_estimate, query_plan = self._run_single_trial(experiment_db_session, query)
                     execution_times.append(execution_time)
                     query_plans.append(query_plan)
                     
@@ -122,7 +124,7 @@ class ExperimentRunner:
                         cost_estimate=cost_estimate
                     )
                     session.add(trial)
-                    await session.commit()
+                    session.commit()
                     
                     # Log detailed trial information
                     query_logger.info(f"Trial {i + 1} completed successfully:")
@@ -160,8 +162,8 @@ class ExperimentRunner:
                 for i, plan in enumerate(query_plans):
                     experiment_logger.debug(f"Plan for trial {i + 1}: {plan}")
             
-            await session.commit()
-            await session.refresh(experiment)
+            session.commit()
+            session.refresh(experiment)
             
             final_msg = (
                 f"Experiment completed! "
@@ -174,29 +176,33 @@ class ExperimentRunner:
             return experiment
             
         except Exception as e:
-            await session.rollback()
+            session.rollback()
             error_msg = f"Experiment failed: {str(e)}"
             experiment_logger.error(error_msg)
             experiment_logger.debug(traceback.format_exc())
             progress_callback(f"❌ {error_msg}", iterations, iterations)
             raise
         finally:
-            if experiment_db_session:
-                await experiment_db_session.close()
+            if experiment_db_session_generator:
+                try:
+                    # Ensure the generator is closed, which also closes the session
+                    next(experiment_db_session_generator)
+                except StopIteration:
+                    pass
             # Drop the temporary database
             progress_callback(f"Cleaning up temporary database '{db_name}'...", iterations, iterations)
-            await drop_database(db_name)
+            drop_database(db_name)
             experiment_logger.info(f"Dropped temporary database: {db_name}")
     
-    async def _run_single_trial(self, session: AsyncSession, query: str) -> Tuple[float, float, Dict[str, Any]]:
+    def _run_single_trial(self, session: Session, query: str) -> Tuple[float, float, Dict[str, Any]]:
         """Run a single trial and return (execution_time, cost_estimate, query_plan)."""
         query_logger.debug(f"Starting new trial with query: {query}")
         
         try:
             # Get query plan and cost estimate
             explain_query = text(f"EXPLAIN (FORMAT JSON) {query}")
-            explain_result = await session.execute(explain_query)
-            explain_result = await explain_result.fetchone()
+            explain_result = session.execute(explain_query)
+            explain_result = explain_result.fetchone()
             
             if not explain_result or not explain_result[0]:
                 error_msg = "Failed to get query plan"
@@ -213,8 +219,8 @@ class ExperimentRunner:
             # Execute query and measure time
             query_logger.debug("Executing query...")
             start_time = time.perf_counter()
-            await session.execute(text(query))
-            await session.commit()  # Commit transaction to ensure execution
+            session.execute(text(query))
+            session.commit()  # Commit transaction to ensure execution
             end_time = time.perf_counter()
             
             execution_time = end_time - start_time
@@ -223,7 +229,7 @@ class ExperimentRunner:
             return execution_time, cost_estimate, query_plan
             
         except Exception as e:
-            await session.rollback()  # Rollback on error
+            session.rollback()  # Rollback on error
             error_msg = f"Error during query execution: {str(e)}"
             query_logger.error(error_msg)
             query_logger.debug(traceback.format_exc())

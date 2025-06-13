@@ -23,7 +23,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/EXPERIMENT
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/EXPERIMENT
     volumes:
       - ./app:/app
       - ./samples:/app/samples:ro

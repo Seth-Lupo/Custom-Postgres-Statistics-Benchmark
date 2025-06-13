@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from .database import create_db_and_tables, init_db, AsyncSessionLocal
+from .database import create_db_and_tables, init_db, get_db
 from .routers import upload, run, results
-from sqlmodel import select
+from sqlmodel import select, Session
 from .models import Experiment
 
 templates = Jinja2Templates(directory="app/templates")
@@ -15,8 +15,8 @@ templates = Jinja2Templates(directory="app/templates")
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    await init_db()
-    await create_db_and_tables()
+    init_db()
+    create_db_and_tables()
     yield
     # Shutdown
     pass
@@ -39,13 +39,12 @@ app.include_router(results.router, tags=["results"])
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+def root(request: Request, db: Session = Depends(get_db)):
     """Home page with navigation and status information."""
-    # Get experiment count using async session
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Experiment))
-        experiments = await result.scalars().all()
-        experiment_count = len(experiments)
+    # Get experiment count using session
+    result = db.execute(select(Experiment))
+    experiments = result.scalars().all()
+    experiment_count = len(experiments)
 
     # Check for uploaded files
     import os

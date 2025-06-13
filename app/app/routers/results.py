@@ -6,10 +6,10 @@ import numpy as np
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
 from sqlalchemy import text
-from ..database import get_session
+from ..database import get_db
 from ..models import Experiment, Trial
+from sqlmodel import Session
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
@@ -19,7 +19,7 @@ os.makedirs("app/static/charts", exist_ok=True)
 
 
 @router.get("/results", response_class=HTMLResponse)
-async def results_page(request: Request, session: Session = Depends(get_session)):
+def results_page(request: Request, session: Session = Depends(get_db)):
     """Render the results page with all experiments."""
     experiments = session.query(Experiment).order_by(Experiment.created_at.desc()).all()
     return templates.TemplateResponse("results.html", {
@@ -29,7 +29,7 @@ async def results_page(request: Request, session: Session = Depends(get_session)
 
 
 @router.get("/results/{experiment_id}")
-async def experiment_detail(experiment_id: int, request: Request, session: Session = Depends(get_session)):
+def experiment_detail(experiment_id: int, request: Request, session: Session = Depends(get_db)):
     """Show detailed results for a specific experiment."""
     experiment = session.query(Experiment).filter(Experiment.id == experiment_id).first()
     if not experiment:
@@ -45,7 +45,7 @@ async def experiment_detail(experiment_id: int, request: Request, session: Sessi
 
 
 @router.get("/results/{experiment_id}/table")
-async def experiment_table(experiment_id: int, request: Request, session: Session = Depends(get_session)):
+def experiment_table(experiment_id: int, request: Request, session: Session = Depends(get_db)):
     """Return HTMX fragment with experiment trial table."""
     experiment = session.query(Experiment).filter(Experiment.id == experiment_id).first()
     if not experiment:
@@ -61,11 +61,11 @@ async def experiment_table(experiment_id: int, request: Request, session: Sessio
 
 
 @router.get("/results/{experiment_id}/chart")
-async def experiment_chart(
+def experiment_chart(
     experiment_id: int,
     request: Request,
     chart_type: str = Query("bar", regex="^(bar|line|histogram)$"),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_db)
 ):
     """Generate and return chart for experiment."""
     experiment = session.query(Experiment).filter(Experiment.id == experiment_id).first()
@@ -86,7 +86,7 @@ async def experiment_chart(
 
 
 @router.get("/static/charts/{filename}")
-async def serve_chart(filename: str):
+def serve_chart(filename: str):
     """Serve chart images."""
     file_path = f"app/static/charts/{filename}"
     if not os.path.exists(file_path):

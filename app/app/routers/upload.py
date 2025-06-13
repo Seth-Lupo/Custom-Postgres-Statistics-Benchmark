@@ -47,7 +47,7 @@ def format_file_size(size_in_bytes: int) -> str:
 
 
 @router.get("/upload", response_class=HTMLResponse)
-async def upload_page(request: Request):
+def upload_page(request: Request):
     """Render the upload page with existing files information."""
     existing_dumps = get_directory_contents(DUMPS_DIR)
     existing_queries = get_directory_contents(QUERIES_DIR)
@@ -67,19 +67,12 @@ async def upload_page(request: Request):
 
 
 @router.post("/upload/dump")
-async def upload_dump(files: List[UploadFile] = File(...)):
+def upload_dump(files: List[UploadFile] = File(...)):
     """Handle database dump files upload."""
     try:
-<<<<<<< HEAD
         uploaded_files = []
         errors = []
-=======
-        if not file.filename.endswith(('.sql', '.dump')):
-            return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
-                <strong>Error!</strong> Only .sql and .dump files are allowed.
-            </div>""")
->>>>>>> 1144569 (important checkpoint)
-        
+
         for file in files:
             if not file.filename.endswith(('.sql', '.dump')):
                 errors.append(f"{file.filename}: Only .sql and .dump files are allowed.")
@@ -88,14 +81,13 @@ async def upload_dump(files: List[UploadFile] = File(...)):
             # Save the uploaded file
             file_path = os.path.join(DUMPS_DIR, file.filename)
             with open(file_path, "wb") as buffer:
-                content = await file.read()
+                content = file.read()
                 buffer.write(content)
             
             file_info = get_file_info(file_path)
             file_info["formatted_size"] = format_file_size(file_info["size"])
             uploaded_files.append(file_info)
         
-<<<<<<< HEAD
         if errors:
             return HTMLResponse(f"""<div id="dump-status" class="alert alert-warning">
                 <strong>Warning!</strong><br>
@@ -139,30 +131,15 @@ async def upload_dump(files: List[UploadFile] = File(...)):
     except Exception as e:
         return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload files: {str(e)}
-=======
-        return HTMLResponse(f"""<div id="dump-status" class="alert alert-success">
-            <strong>Success!</strong> Database dump uploaded successfully: {file.filename}
-        </div>""")
-    except Exception as e:
-        return HTMLResponse(f"""<div id="dump-status" class="alert alert-danger">
-            <strong>Error!</strong> Failed to upload file: {str(e)}
->>>>>>> 1144569 (important checkpoint)
         </div>""")
 
 
 @router.post("/upload/queries")
-async def upload_queries(files: List[UploadFile] = File(...)):
+def upload_queries(files: List[UploadFile] = File(...)):
     """Handle queries files upload."""
     try:
-<<<<<<< HEAD
         uploaded_files = []
         errors = []
-=======
-        if not file.filename.endswith('.sql'):
-            return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
-                <strong>Error!</strong> Only .sql files are allowed.
-            </div>""")
->>>>>>> 1144569 (important checkpoint)
         
         for file in files:
             if not file.filename.endswith('.sql'):
@@ -172,14 +149,13 @@ async def upload_queries(files: List[UploadFile] = File(...)):
             # Save the uploaded file
             file_path = os.path.join(QUERIES_DIR, file.filename)
             with open(file_path, "wb") as buffer:
-                content = await file.read()
+                content = file.read()
                 buffer.write(content)
             
             file_info = get_file_info(file_path)
             file_info["formatted_size"] = format_file_size(file_info["size"])
             uploaded_files.append(file_info)
         
-<<<<<<< HEAD
         if errors:
             return HTMLResponse(f"""<div id="queries-status" class="alert alert-warning">
                 <strong>Warning!</strong><br>
@@ -223,12 +199,4 @@ async def upload_queries(files: List[UploadFile] = File(...)):
     except Exception as e:
         return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
             <strong>Error!</strong> Failed to upload files: {str(e)}
-=======
-        return HTMLResponse(f"""<div id="queries-status" class="alert alert-success">
-            <strong>Success!</strong> Queries file uploaded successfully: {file.filename}
-        </div>""")
-    except Exception as e:
-        return HTMLResponse(f"""<div id="queries-status" class="alert alert-danger">
-            <strong>Error!</strong> Failed to upload file: {str(e)}
->>>>>>> 1144569 (important checkpoint)
         </div>""") 
