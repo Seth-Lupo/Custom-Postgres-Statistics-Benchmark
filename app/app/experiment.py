@@ -48,7 +48,7 @@ class ExperimentRunner:
         instance = source_class()
         return instance.get_available_configs()
     
-    def run_experiment(self, session: Session, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
+    def run_experiment(self, session: Session, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, stats_reset_strategy: str, transaction_handling: str, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
         
         db_name = "test_database"
         experiment_logs = []  # Capture all experiment logs
@@ -62,6 +62,8 @@ class ExperimentRunner:
         experiment_logger.info(f"Starting new experiment with {stats_source} stats source")
         experiment_logger.debug(f"Query: {query}")
         experiment_logger.debug(f"Iterations: {iterations}")
+        experiment_logger.info(f"Stats reset strategy: {stats_reset_strategy}")
+        experiment_logger.info(f"Transaction handling: {transaction_handling}")
         experiment_logger.info(f"Using temporary database: {db_name} from dump: {dump_path}")
         
         if stats_source not in self.stats_sources:
@@ -118,6 +120,8 @@ class ExperimentRunner:
                 config_yaml=actual_config_yaml,
                 query=query,
                 iterations=iterations,
+                stats_reset_strategy=stats_reset_strategy,
+                transaction_handling=transaction_handling,
                 exit_status="RUNNING"
             )
             session.add(experiment)
@@ -144,19 +148,21 @@ class ExperimentRunner:
             experiment_db_session_generator = get_db_session(db_name)
             experiment_db_session = next(experiment_db_session_generator)
 
-            # Apply statistics
-            msg = f"Applying {stats_source_instance.name()} statistics to database..."
-            log_and_callback(msg, 0, iterations)
-            experiment_logger.info(msg)
-            
-            try:
-                stats_source_instance.apply_statistics(experiment_db_session)
-                stats_logger.info(f"Successfully applied {stats_source_instance.name()} statistics")
-            except Exception as e:
-                error_msg = f"Failed to apply statistics: {str(e)}"
-                stats_logger.error(error_msg)
-                stats_logger.debug(traceback.format_exc())
-                raise StatsApplicationError(error_msg) from e
+            # Apply statistics based on strategy
+            if stats_reset_strategy == "once":
+                # Apply statistics once before all trials
+                msg = f"Applying {stats_source_instance.name()} statistics to database (once before all trials)..."
+                log_and_callback(msg, 0, iterations)
+                experiment_logger.info(msg)
+                
+                try:
+                    stats_source_instance.apply_statistics(experiment_db_session)
+                    stats_logger.info(f"Successfully applied {stats_source_instance.name()} statistics")
+                except Exception as e:
+                    error_msg = f"Failed to apply statistics: {str(e)}"
+                    stats_logger.error(error_msg)
+                    stats_logger.debug(traceback.format_exc())
+                    raise StatsApplicationError(error_msg) from e
             
             # Run trials
             execution_times = []
@@ -168,7 +174,23 @@ class ExperimentRunner:
                 experiment_logger.info(trial_msg)
                 
                 try:
-                    execution_time, cost_estimate, query_plan = self._run_single_trial(experiment_db_session, query)
+                    # Apply statistics per trial if strategy is per_trial
+                    if stats_reset_strategy == "per_trial":
+                        trial_stats_msg = f"Resetting and applying {stats_source_instance.name()} statistics for trial {i + 1}..."
+                        log_and_callback(trial_stats_msg, i, iterations)
+                        experiment_logger.info(trial_stats_msg)
+                        
+                        try:
+                            stats_source_instance.apply_statistics(experiment_db_session)
+                            stats_logger.info(f"Successfully applied {stats_source_instance.name()} statistics for trial {i + 1}")
+                        except Exception as e:
+                            error_msg = f"Failed to apply statistics for trial {i + 1}: {str(e)}"
+                            stats_logger.error(error_msg)
+                            stats_logger.debug(traceback.format_exc())
+                            raise StatsApplicationError(error_msg) from e
+                    
+                    # Execute the trial with transaction handling
+                    execution_time, cost_estimate, query_plan = self._run_single_trial(experiment_db_session, query, transaction_handling)
                     execution_times.append(execution_time)
                     query_plans.append(query_plan)
                     
@@ -265,9 +287,9 @@ class ExperimentRunner:
             drop_database(db_name)
             experiment_logger.info(f"Dropped temporary database: {db_name}")
     
-    def _run_single_trial(self, session: Session, query: str) -> Tuple[float, float, Dict[str, Any]]:
+    def _run_single_trial(self, session: Session, query: str, transaction_handling: str) -> Tuple[float, float, Dict[str, Any]]:
         """Run a single trial and return (execution_time, cost_estimate, query_plan)."""
-        query_logger.debug(f"Starting new trial with query: {query}")
+        query_logger.debug(f"Starting new trial with query: {query} (transaction handling: {transaction_handling})")
         
         try:
             # Clear caches before trial
@@ -293,7 +315,7 @@ class ExperimentRunner:
             session.commit()
             query_logger.debug("Cleared caches before trial")
             
-            # Get query plan and cost estimate
+            # Get query plan and cost estimate (this doesn't modify data)
             explain_query = text(f"EXPLAIN (FORMAT JSON) {query}")
             explain_result = session.execute(explain_query)
             explain_result = explain_result.fetchone()
@@ -310,15 +332,41 @@ class ExperimentRunner:
             query_logger.debug(f"Query plan obtained: {query_plan}")
             query_logger.debug(f"Estimated cost: {cost_estimate}")
             
-            # Execute query and measure time
-            query_logger.debug("Executing query...")
-            start_time = time.perf_counter()
-            session.execute(text(query))
-            session.commit()  # Commit transaction to ensure execution
-            end_time = time.perf_counter()
-            
-            execution_time = end_time - start_time
-            query_logger.debug(f"Query executed in {execution_time:.4f} seconds")
+            # Execute query with appropriate transaction handling
+            if transaction_handling == "rollback":
+                # Create a savepoint to rollback to after query execution
+                savepoint = session.begin_nested()
+                query_logger.debug("Created savepoint for rollback transaction handling")
+                
+                try:
+                    # Execute query and measure time
+                    query_logger.debug("Executing query with rollback transaction handling...")
+                    start_time = time.perf_counter()
+                    session.execute(text(query))
+                    session.flush()  # Ensure query is executed but don't commit
+                    end_time = time.perf_counter()
+                    
+                    execution_time = end_time - start_time
+                    query_logger.debug(f"Query executed in {execution_time:.4f} seconds")
+                    
+                    # Rollback to savepoint to undo any changes
+                    savepoint.rollback()
+                    query_logger.debug("Rolled back transaction - database state preserved")
+                    
+                except Exception as e:
+                    savepoint.rollback()
+                    raise e
+                    
+            else:  # transaction_handling == "persist"
+                # Execute query and commit changes
+                query_logger.debug("Executing query with persistent transaction handling...")
+                start_time = time.perf_counter()
+                session.execute(text(query))
+                session.commit()  # Commit transaction to persist changes
+                end_time = time.perf_counter()
+                
+                execution_time = end_time - start_time
+                query_logger.debug(f"Query executed in {execution_time:.4f} seconds (changes persisted)")
             
             return execution_time, cost_estimate, query_plan
             

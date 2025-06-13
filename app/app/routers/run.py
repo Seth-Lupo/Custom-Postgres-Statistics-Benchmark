@@ -103,6 +103,8 @@ def run_experiment(
     config_name: str = Form(None),
     config_yaml: str = Form(None),
     iterations: int = Form(...),
+    stats_reset_strategy: str = Form(...),
+    transaction_handling: str = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
     db: Session = Depends(get_db)
@@ -110,7 +112,9 @@ def run_experiment(
     """Launch an experiment in the background with selected files."""
     try:
         config_display = f"config '{config_name}'" if config_name else "default config"
-        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({config_display}), {iterations} iterations, dump {dump_file}, query {query_file}")
+        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({config_display}), {iterations} iterations")
+        web_logger.info(f"Stats reset strategy: {stats_reset_strategy}, Transaction handling: {transaction_handling}")
+        web_logger.info(f"Dump: {dump_file}, Query: {query_file}")
         
         if config_yaml:
             web_logger.debug(f"Using custom configuration: {config_yaml[:200]}...")  # Log first 200 chars
@@ -183,12 +187,13 @@ def run_experiment(
             "name": experiment_name
         }
         web_logger.info(f"Created experiment with ID {experiment_id}")
-        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, config_name, config_yaml, query, iterations, dump_path, experiment_name)
+        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, config_name, config_yaml, query, iterations, stats_reset_strategy, transaction_handling, dump_path, experiment_name)
         return HTMLResponse(f"""
         <div id=\"experiment-result\">
             <div class=\"alert alert-info\">
                 <strong>Experiment Started!</strong> Running {iterations} iterations with {stats_source}...<br>
-                <span class=\"text-muted\">Name: {experiment_name} | Dump: {dump_file} | Query: {query_file}</span>
+                <span class=\"text-muted\">Name: {experiment_name} | Stats: {stats_reset_strategy} | Transaction: {transaction_handling}</span><br>
+                <span class=\"text-muted\">Dump: {dump_file} | Query: {query_file}</span>
             </div>
             <div class=\"progress mb-3\">
                 <div class=\"progress-bar\" role=\"progressbar\" style=\"width: 0%\" id=\"progress-bar-{experiment_id}\">0%</div>
@@ -305,7 +310,7 @@ async def experiment_stream(experiment_id: int):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, dump_path: str, name: str):
+def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, stats_reset_strategy: str, transaction_handling: str, dump_path: str, name: str):
     """Run the experiment in the background."""
     db: Session = SessionLocal()
     try:
@@ -326,6 +331,8 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
             config_yaml=config_yaml,
             query=query,
             iterations=iterations,
+            stats_reset_strategy=stats_reset_strategy,
+            transaction_handling=transaction_handling,
             dump_path=dump_path,
             progress_callback=progress_callback,
             name=name

@@ -11,7 +11,7 @@ def get_database_url():
     return os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/llm_pg_stats')
 
 def add_config_fields():
-    """Add config_name and config_yaml fields to experiments table."""
+    """Add config_name, config_yaml, stats_reset_strategy, and transaction_handling fields to experiments table."""
     engine = create_engine(get_database_url())
     
     with engine.connect() as conn:
@@ -20,7 +20,7 @@ def add_config_fields():
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name = 'experiment' 
-            AND column_name IN ('config_name', 'config_yaml', 'exit_status', 'experiment_logs')
+            AND column_name IN ('config_name', 'config_yaml', 'exit_status', 'experiment_logs', 'stats_reset_strategy', 'transaction_handling')
         """))
         existing_columns = [row[0] for row in result.fetchall()]
         
@@ -55,13 +55,30 @@ def add_config_fields():
             print("✓ experiment_logs field added")
         else:
             print("experiment_logs field already exists")
+        
+        if 'stats_reset_strategy' not in existing_columns:
+            print("Adding stats_reset_strategy field...")
+            conn.execute(text("ALTER TABLE experiment ADD COLUMN stats_reset_strategy VARCHAR(50) DEFAULT 'once'"))
+            conn.commit()
+            print("✓ stats_reset_strategy field added")
+        else:
+            print("stats_reset_strategy field already exists")
+        
+        if 'transaction_handling' not in existing_columns:
+            print("Adding transaction_handling field...")
+            conn.execute(text("ALTER TABLE experiment ADD COLUMN transaction_handling VARCHAR(50) DEFAULT 'rollback'"))
+            conn.commit()
+            print("✓ transaction_handling field added")
+        else:
+            print("transaction_handling field already exists")
     
     print("Migration completed successfully!")
 
 if __name__ == "__main__":
-    print("Running migration to add configuration fields...")
+    print("Starting database migration...")
     try:
         add_config_fields()
+        print("✓ Migration completed successfully!")
     except Exception as e:
-        print(f"Migration failed: {e}")
+        print(f"❌ Migration failed: {e}")
         sys.exit(1) 

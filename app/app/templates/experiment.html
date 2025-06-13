@@ -101,6 +101,30 @@
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
+                        <label for="stats_reset_strategy" class="form-label">
+                            <i class="bi bi-bootstrap-reboot me-1"></i>
+                            Statistics Reset Strategy
+                        </label>
+                        <select class="form-select" id="stats_reset_strategy" name="stats_reset_strategy" required>
+                            <option value="once" selected>Apply statistics once before all trials</option>
+                            <option value="per_trial">Reset and apply statistics before each trial</option>
+                        </select>
+                        <div class="form-text">Choose when to apply/reset database statistics</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="transaction_handling" class="form-label">
+                            <i class="bi bi-database-exclamation me-1"></i>
+                            Transaction Handling
+                        </label>
+                        <select class="form-select" id="transaction_handling" name="transaction_handling" required>
+                            <option value="rollback" selected>Rollback changes after each trial</option>
+                            <option value="persist">Allow persistent changes to test database</option>
+                        </select>
+                        <div class="form-text">Choose how to handle query changes to the database</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
                         <label for="query_file" class="form-label">
                             <i class="bi bi-file-earmark-code me-1"></i>
                             Query File

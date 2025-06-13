@@ -12,6 +12,8 @@ class Experiment(SQLModel, table=True):
     config_yaml: Optional[str] = Field(default=None)
     query: str
     iterations: int
+    stats_reset_strategy: str = Field(default="once", max_length=50)  # "once" or "per_trial"
+    transaction_handling: str = Field(default="rollback", max_length=50)  # "rollback" or "persist"
     avg_time: Optional[float] = Field(default=None)
     stddev_time: Optional[float] = Field(default=None)
     exit_status: Optional[str] = Field(default="PENDING", max_length=50)  # SUCCESS, FAILED, PENDING

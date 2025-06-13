@@ -98,6 +98,64 @@
         </div>
     </div>
 
+    <!-- Experiment Behavior Configuration -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="rounded-circle bg-purple bg-opacity-10 p-3 me-3" style="background-color: rgba(102, 16, 242, 0.1) !important;">
+                            <i class="bi bi-bootstrap-reboot" style="color: #6610f2;"></i>
+                        </div>
+                        <div>
+                            <h6 class="card-subtitle text-muted mb-1">Statistics Reset Strategy</h6>
+                            <h5 class="card-title mb-0">
+                                {% if experiment.stats_reset_strategy == 'once' %}
+                                <span class="badge bg-info">
+                                    <i class="bi bi-arrow-down-circle me-1"></i>
+                                    Once Before All Trials
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-arrow-repeat me-1"></i>
+                                    Reset Per Trial
+                                </span>
+                                {% endif %}
+                            </h5>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="rounded-circle bg-teal bg-opacity-10 p-3 me-3" style="background-color: rgba(13, 202, 240, 0.1) !important;">
+                            <i class="bi bi-database-exclamation" style="color: #0dcaf0;"></i>
+                        </div>
+                        <div>
+                            <h6 class="card-subtitle text-muted mb-1">Transaction Handling</h6>
+                            <h5 class="card-title mb-0">
+                                {% if experiment.transaction_handling == 'rollback' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>
+                                    Rollback Changes
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-save me-1"></i>
+                                    Persist Changes
+                                </span>
+                                {% endif %}
+                            </h5>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Exit Status and Additional Stats -->
     <div class="row g-4 mb-4">
         <div class="col-md-6">
