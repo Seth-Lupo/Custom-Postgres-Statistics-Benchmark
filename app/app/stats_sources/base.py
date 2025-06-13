@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from ..logging_config import stats_logger
 
@@ -7,14 +7,14 @@ from ..logging_config import stats_logger
 class StatsSource(ABC):
     """Abstract base class for statistics sources."""
     
-    def apply_statistics(self, session: Session) -> None:
+    async def apply_statistics(self, session: AsyncSession) -> None:
         """Apply statistics to the database."""
         try:
             stats_logger.info("Running ANALYZE to update statistics")
             # Properly use text() for the ANALYZE statement
             analyze_stmt = text("ANALYZE")
-            session.execute(analyze_stmt)
-            session.commit()
+            await session.execute(analyze_stmt)
+            await session.commit()
             stats_logger.info("ANALYZE completed successfully")
         except Exception as e:
             stats_logger.error(f"Failed to run ANALYZE: {str(e)}")

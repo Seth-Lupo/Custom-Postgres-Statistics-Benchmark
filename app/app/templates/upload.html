@@ -64,29 +64,41 @@
         <div class="col-md-6">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-white py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-database me-2 text-primary"></i>
-                        <h5 class="card-title mb-0">Database Dump</h5>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-database me-2 text-primary"></i>
+                            <h5 class="card-title mb-0">Database Dump</h5>
+                        </div>
+                        <span class="badge bg-primary">{{ existing_dumps|length }} files</span>
                     </div>
                 </div>
                 <div class="card-body">
                     <form hx-post="/upload/dump" 
-                          hx-target="#dump-status" 
+                          hx-target="#dump-files-section" 
                           hx-encoding="multipart/form-data"
                           hx-indicator="#dump-loading"
                           class="needs-validation"
                           novalidate>
                         <div class="mb-4">
-                            <label for="dump-file" class="form-label">Select SQL dump file</label>
-                            <div class="input-group">
-                                <input class="form-control" type="file" id="dump-file" name="file" 
-                                       accept=".sql,.dump" required
-                                       data-browse="Choose file">
-                                <label class="input-group-text" for="dump-file">
-                                    <i class="bi bi-upload"></i>
-                                </label>
+                            <div class="upload-zone p-4 text-center border rounded mb-3" 
+                                 ondrop="handleDrop(event, 'dump-file')" 
+                                 ondragover="handleDragOver(event)"
+                                 ondragleave="handleDragLeave(event)">
+                                <i class="bi bi-cloud-arrow-up display-4 text-primary mb-3"></i>
+                                <h5>Drag & Drop Files Here</h5>
+                                <p class="text-muted mb-3">or</p>
+                                <div class="input-group">
+                                    <input class="form-control" type="file" id="dump-file" name="files" 
+                                           accept=".sql,.dump" required multiple
+                                           onchange="updateFileList(this, 'dump-file-list')"
+                                           style="display: none;">
+                                    <label class="btn btn-outline-primary w-100" for="dump-file">
+                                        <i class="bi bi-folder me-2"></i>Choose Files
+                                    </label>
+                                </div>
+                                <div id="dump-file-list" class="selected-files mt-3"></div>
                             </div>
-                            <div class="form-text">Accepted formats: .sql, .dump</div>
+                            <div class="form-text">Accepted formats: .sql, .dump. You can select multiple files.</div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100">
                             <span id="dump-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" 
@@ -95,7 +107,32 @@
                             Upload Database Dump
                         </button>
                     </form>
-                    <div id="dump-status" class="mt-3"></div>
+                    
+                    <div id="dump-files-section">
+                        <div id="dump-status" class="mt-3"></div>
+                        {% if existing_dumps %}
+                        <div class="table-responsive mt-3">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Filename</th>
+                                        <th>Size</th>
+                                        <th>Modified</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for file in existing_dumps %}
+                                    <tr>
+                                        <td>{{ file.name }}</td>
+                                        <td>{{ file.formatted_size }}</td>
+                                        <td>{{ file.modified }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -104,29 +141,41 @@
         <div class="col-md-6">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-white py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-file-earmark-code me-2 text-primary"></i>
-                        <h5 class="card-title mb-0">SQL Queries</h5>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-file-earmark-code me-2 text-primary"></i>
+                            <h5 class="card-title mb-0">SQL Queries</h5>
+                        </div>
+                        <span class="badge bg-primary">{{ existing_queries|length }} files</span>
                     </div>
                 </div>
                 <div class="card-body">
                     <form hx-post="/upload/queries" 
-                          hx-target="#queries-status" 
+                          hx-target="#queries-files-section" 
                           hx-encoding="multipart/form-data"
                           hx-indicator="#queries-loading"
                           class="needs-validation"
                           novalidate>
                         <div class="mb-4">
-                            <label for="queries-file" class="form-label">Select SQL queries file</label>
-                            <div class="input-group">
-                                <input class="form-control" type="file" id="queries-file" name="file" 
-                                       accept=".sql" required
-                                       data-browse="Choose file">
-                                <label class="input-group-text" for="queries-file">
-                                    <i class="bi bi-upload"></i>
-                                </label>
+                            <div class="upload-zone p-4 text-center border rounded mb-3" 
+                                 ondrop="handleDrop(event, 'queries-file')" 
+                                 ondragover="handleDragOver(event)"
+                                 ondragleave="handleDragLeave(event)">
+                                <i class="bi bi-cloud-arrow-up display-4 text-primary mb-3"></i>
+                                <h5>Drag & Drop Files Here</h5>
+                                <p class="text-muted mb-3">or</p>
+                                <div class="input-group">
+                                    <input class="form-control" type="file" id="queries-file" name="files" 
+                                           accept=".sql" required multiple
+                                           onchange="updateFileList(this, 'queries-file-list')"
+                                           style="display: none;">
+                                    <label class="btn btn-outline-primary w-100" for="queries-file">
+                                        <i class="bi bi-folder me-2"></i>Choose Files
+                                    </label>
+                                </div>
+                                <div id="queries-file-list" class="selected-files mt-3"></div>
                             </div>
-                            <div class="form-text">Accepted format: .sql</div>
+                            <div class="form-text">Accepted format: .sql. You can select multiple files.</div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100">
                             <span id="queries-loading" class="htmx-indicator spinner-border spinner-border-sm me-2" 
@@ -135,7 +184,32 @@
                             Upload SQL Queries
                         </button>
                     </form>
-                    <div id="queries-status" class="mt-3"></div>
+                    
+                    <div id="queries-files-section">
+                        <div id="queries-status" class="mt-3"></div>
+                        {% if existing_queries %}
+                        <div class="table-responsive mt-3">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Filename</th>
+                                        <th>Size</th>
+                                        <th>Modified</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for file in existing_queries %}
+                                    <tr>
+                                        <td>{{ file.name }}</td>
+                                        <td>{{ file.formatted_size }}</td>
+                                        <td>{{ file.modified }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -173,19 +247,52 @@ document.addEventListener('DOMContentLoaded', function() {
             form.classList.add('was-validated');
         }, false);
     });
-
-    // Custom file input styling
-    const fileInputs = document.querySelectorAll('input[type="file"]');
-    fileInputs.forEach(input => {
-        input.addEventListener('change', function(e) {
-            const fileName = e.target.files[0]?.name || 'No file chosen';
-            const label = e.target.nextElementSibling;
-            if (label) {
-                label.textContent = fileName;
-            }
-        });
-    });
 });
+
+// File upload handling
+function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.classList.remove('drag-over');
+}
+
+function handleDrop(event, inputId) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.classList.remove('drag-over');
+    
+    const input = document.getElementById(inputId);
+    const dt = event.dataTransfer;
+    const files = dt.files;
+    
+    input.files = files;
+    updateFileList(input, inputId + '-list');
+}
+
+function updateFileList(input, listId) {
+    const fileList = document.getElementById(listId);
+    fileList.innerHTML = '';
+    
+    if (input.files.length > 0) {
+        const list = document.createElement('ul');
+        list.className = 'list-unstyled mb-0';
+        
+        Array.from(input.files).forEach(file => {
+            const li = document.createElement('li');
+            li.className = 'text-start';
+            li.innerHTML = `<i class="bi bi-file-earmark me-2"></i>${file.name}`;
+            list.appendChild(li);
+        });
+        
+        fileList.appendChild(list);
+    }
+}
 </script>
 
 <style>
@@ -309,6 +416,39 @@ input[type="file"] {
 .alert-danger {
     background-color: #f8d7da;
     color: #842029;
+}
+
+.upload-zone {
+    border: 2px dashed #dee2e6;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-zone:hover {
+    border-color: #0d6efd;
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.upload-zone.drag-over {
+    border-color: #0d6efd;
+    background-color: rgba(13, 110, 253, 0.1);
+}
+
+.selected-files {
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+.selected-files ul {
+    margin-bottom: 0;
+}
+
+.selected-files li {
+    margin-bottom: 0.25rem;
+}
+
+.selected-files li:last-child {
+    margin-bottom: 0;
 }
 </style>
 {% endblock %} 

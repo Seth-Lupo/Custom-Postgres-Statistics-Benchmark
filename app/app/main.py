@@ -3,8 +3,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from .database import create_db_and_tables
+from .database import create_db_and_tables, init_db, AsyncSessionLocal
 from .routers import upload, run, results
+from sqlmodel import select
+from .models import Experiment
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -13,7 +15,8 @@ templates = Jinja2Templates(directory="app/templates")
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    create_db_and_tables()
+    await init_db()
+    await create_db_and_tables()
     yield
     # Shutdown
     pass
@@ -38,19 +41,20 @@ app.include_router(results.router, tags=["results"])
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Home page with navigation and status information."""
-    from sqlmodel import Session, select
-    from .database import engine
-    from .models import Experiment
-
-    # Get experiment count
-    with Session(engine) as session:
-        experiment_count = session.exec(select(Experiment)).all().__len__()
+    # Get experiment count using async session
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Experiment))
+        experiments = await result.scalars().all()
+        experiment_count = len(experiments)
 
     # Check for uploaded files
     import os
     uploads_dir = "app/uploads"
-    dump_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql')]
-    query_files = [f for f in os.listdir(uploads_dir) if f.endswith('.txt')]
+    dumps_dir = os.path.join(uploads_dir, "dumps")
+    queries_dir = os.path.join(uploads_dir, "queries")
+    
+    dump_files = [f for f in os.listdir(dumps_dir) if f.endswith(('.sql', '.dump'))] if os.path.exists(dumps_dir) else []
+    query_files = [f for f in os.listdir(queries_dir) if f.endswith('.sql')] if os.path.exists(queries_dir) else []
 
     return templates.TemplateResponse("home.html", {
         "request": request,

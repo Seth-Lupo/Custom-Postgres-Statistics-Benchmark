@@ -4,12 +4,14 @@ import os
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, BackgroundTasks, status
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_session
 from ..experiment import ExperimentRunner, ExperimentError
 from ..logging_config import web_logger
 from fastapi.exception_handlers import RequestValidationError
 from fastapi.exceptions import RequestValidationError
+from sqlmodel import select
+from ..models import Experiment as ExperimentModel
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
@@ -28,9 +30,14 @@ async def experiment_page(request: Request):
     stats_sources = experiment_runner.get_available_stats_sources()
 
     # List available dump and query files
-    uploads_dir = "app/app/uploads"
-    dump_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql') or f.endswith('.dump')]
-    query_files = [f for f in os.listdir(uploads_dir) if f.endswith('.sql')]
+    uploads_dir = "app/uploads"
+    dumps_dir = os.path.join(uploads_dir, "dumps")
+    queries_dir = os.path.join(uploads_dir, "queries")
+    
+    dump_files = [f for f in os.listdir(dumps_dir) if f.endswith(('.sql', '.dump'))]
+    query_files = [f for f in os.listdir(queries_dir) if f.endswith('.sql')]
+
+   
 
     queries_not_available = len(query_files) == 0
     return templates.TemplateResponse("experiment.html", {
@@ -46,19 +53,34 @@ async def experiment_page(request: Request):
 async def run_experiment(
     request: Request,
     background_tasks: BackgroundTasks,
+    experiment_name: str = Form(...),
     stats_source: str = Form(...),
     iterations: int = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
-    session: Session = Depends(get_session)
+    session: AsyncSession = Depends(get_session)
 ):
     """Launch an experiment in the background with selected files."""
     try:
-        web_logger.info(f"Starting experiment with {stats_source} source, {iterations} iterations, dump {dump_file}, query {query_file}")
+        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source, {iterations} iterations, dump {dump_file}, query {query_file}")
 
-        uploads_dir = "app/app/uploads"
-        dump_path = os.path.join(uploads_dir, dump_file)
-        query_path = os.path.join(uploads_dir, query_file)
+        # Check if experiment with this name already exists and has been executed
+        query = select(ExperimentModel).where(ExperimentModel.name == experiment_name)
+        result = await session.execute(query)
+        existing_experiment = result.scalar_one_or_none()
+        
+        if existing_experiment and existing_experiment.is_executed:
+            error_msg = f"An experiment with the name '{experiment_name}' has already been executed. Please choose a different name."
+            web_logger.error(error_msg)
+            return HTMLResponse(f"""
+                <div class='alert alert-danger'>
+                    <strong>Error:</strong> {error_msg}
+                </div>
+            """, status_code=400)
+
+        uploads_dir = "app/uploads"
+        dump_path = os.path.join(uploads_dir, "dumps", dump_file)
+        query_path = os.path.join(uploads_dir, "queries", query_file)
 
         # Validate files exist
         if not os.path.exists(dump_path):
@@ -106,15 +128,16 @@ async def run_experiment(
             "total": iterations,
             "messages": [],
             "log_level": "info",
-            "experiment": None
+            "experiment": None,
+            "name": experiment_name
         }
         web_logger.info(f"Created experiment with ID {experiment_id}")
-        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, query, iterations)
+        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, query, iterations, dump_path, experiment_name, session)
         return HTMLResponse(f"""
         <div id=\"experiment-result\">
             <div class=\"alert alert-info\">
                 <strong>Experiment Started!</strong> Running {iterations} iterations with {stats_source}...<br>
-                <span class=\"text-muted\">Dump: {dump_file} | Query: {query_file}</span>
+                <span class=\"text-muted\">Name: {experiment_name} | Dump: {dump_file} | Query: {query_file}</span>
             </div>
             <div class=\"progress mb-3\">
                 <div class=\"progress-bar\" role=\"progressbar\" style=\"width: 0%\" id=\"progress-bar-{experiment_id}\">0%</div>
@@ -232,29 +255,53 @@ async def experiment_stream(experiment_id: int):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-def run_experiment_background(experiment_id: int, stats_source: str, query: str, iterations: int):
-    """Run experiment in background thread."""
-    from ..database import SessionLocal
+async def run_experiment_background(experiment_id: int, stats_source: str, query: str, iterations: int, dump_path: str, name: str, session: AsyncSession):
+    """Run an experiment in the background."""
     
-    session = SessionLocal()
     try:
+        from sqlmodel import Session, select
+        from ..database import engine
+        from ..models import Experiment as ExperimentModel
+        from ..database import AsyncSessionLocal
+        
+        status = experiment_status[experiment_id]
+        experiment_name = status["name"]
+
         def progress_callback(message: str, current: int, total: int):
-            experiment_status[experiment_id]["progress"] = current
-            experiment_status[experiment_id]["messages"].append(message)
-        
+            """Update experiment progress."""
+            if experiment_id in experiment_status:
+                status = experiment_status[experiment_id]
+                status["progress"] = current
+                status["messages"].append(message)
+
         # Run the experiment
-        experiment = experiment_runner.run_experiment(
-            session, 
-            stats_source, 
-            query, 
-            iterations,
-            progress_callback
+        experiment = await experiment_runner.run_experiment(
+            stats_source=stats_source,
+            session=session,
+            query=query,
+            iterations=iterations,
+            dump_path=dump_path,
+            progress_callback=progress_callback,
+            name=experiment_name,
         )
-        
-        experiment_status[experiment_id]["status"] = "completed"
-        experiment_status[experiment_id]["experiment"] = experiment
-        web_logger.info(f"Experiment {experiment_id} completed successfully")
-        
+
+        # Update experiment status
+        if experiment_id in experiment_status:
+            status = experiment_status[experiment_id]
+            status["status"] = "completed"
+            status["experiment"] = experiment
+            status["messages"].append("✅ Experiment completed successfully!")
+
+            # Mark the experiment as executed in the database
+            async with AsyncSessionLocal() as session:
+                query = select(ExperimentModel).where(ExperimentModel.name == experiment_name)
+                result = await session.execute(query)
+                db_experiment = result.scalar_one_or_none()
+                if db_experiment:
+                    db_experiment.is_executed = True
+                    session.add(db_experiment)
+                    await session.commit()
+
     except ExperimentError as e:
         error_msg = str(e)
         web_logger.error(f"Experiment {experiment_id} failed with ExperimentError: {error_msg}")
@@ -268,4 +315,4 @@ def run_experiment_background(experiment_id: int, stats_source: str, query: str,
         experiment_status[experiment_id]["error"] = error_msg
         
     finally:
-        session.close() 
+        pass 

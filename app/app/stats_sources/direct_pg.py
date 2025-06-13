@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from .base import StatsSource
 
@@ -6,12 +6,12 @@ from .base import StatsSource
 class DirectPgStatsSource(StatsSource):
     """Statistics source that uses PostgreSQL's built-in statistics."""
     
-    def apply_statistics(self, session: Session) -> None:
+    async def apply_statistics(self, session: AsyncSession) -> None:
         """No-op: uses built-in PostgreSQL statistics."""
         # Ensure we have fresh statistics by running ANALYZE
         analyze_stmt = text("ANALYZE;")
-        session.execute(analyze_stmt)
-        session.commit()
+        await session.execute(analyze_stmt)
+        await session.commit()
     
     def name(self) -> str:
         """Return the name of this statistics source."""

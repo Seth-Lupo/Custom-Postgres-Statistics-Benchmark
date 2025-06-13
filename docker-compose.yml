@@ -6,9 +6,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: experiment
-    volumes:
-      - ./samples/dump.sql:/docker-entrypoint-initdb.d/dump.sql:ro
+      POSTGRES_DB: EXPERIMENT
     ports:
       - "5432:5432"
     healthcheck:
@@ -16,6 +14,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
 
   web:
     build: ./app
@@ -23,9 +23,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/experiment
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/EXPERIMENT
     volumes:
       - ./app:/app
-      - ./samples/queries.sql:/app/samples/queries.sql:ro
+      - ./samples:/app/samples:ro
     ports:
       - "8000:8000" 
