@@ -48,12 +48,28 @@ def experiment_page(request: Request):
     })
 
 
+@router.get("/experiment/configs/{stats_source}")
+def get_configs(stats_source: str):
+    """Get available configurations for a stats source."""
+    try:
+        configs = experiment_runner.get_available_configs(stats_source)
+        return JSONResponse({
+            "configs": configs
+        })
+    except Exception as e:
+        web_logger.error(f"Failed to get configs for {stats_source}: {str(e)}")
+        return JSONResponse({
+            "error": f"Failed to get configurations: {str(e)}"
+        }, status_code=500)
+
+
 @router.post("/experiment")
 def run_experiment(
     request: Request,
     background_tasks: BackgroundTasks,
     experiment_name: str = Form(...),
     stats_source: str = Form(...),
+    config_name: str = Form(None),
     iterations: int = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
@@ -131,7 +147,7 @@ def run_experiment(
             "name": experiment_name
         }
         web_logger.info(f"Created experiment with ID {experiment_id}")
-        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, query, iterations, dump_path, experiment_name)
+        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, config_name, query, iterations, dump_path, experiment_name)
         return HTMLResponse(f"""
         <div id=\"experiment-result\">
             <div class=\"alert alert-info\">
@@ -253,7 +269,7 @@ async def experiment_stream(experiment_id: int):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-def run_experiment_background(experiment_id: int, stats_source: str, query: str, iterations: int, dump_path: str, name: str):
+def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, query: str, iterations: int, dump_path: str, name: str):
     """Run the experiment in the background."""
     db: Session = SessionLocal()
     try:
@@ -270,6 +286,7 @@ def run_experiment_background(experiment_id: int, stats_source: str, query: str,
         experiment = experiment_runner.run_experiment(
             session=db,
             stats_source=stats_source,
+            config_name=config_name,
             query=query,
             iterations=iterations,
             dump_path=dump_path,

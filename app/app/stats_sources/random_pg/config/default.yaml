@@ -1,0 +1,15 @@
+name: default
+description: "Default random statistics configuration"
+settings:
+  min_stats_value: 1
+  max_stats_value: 10000
+  analyze_verbose: true
+  analyze_timeout_seconds: 300
+  clear_caches: true
+  reset_counters: true
+  work_mem: "16MB"
+  maintenance_work_mem: "16MB"
+  skip_system_schemas: true
+  excluded_schemas:
+    - "information_schema"
+    - "pg_catalog" 

@@ -5,7 +5,7 @@ from typing import List, Tuple, Callable, Dict, Any
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from .models import Experiment, Trial
-from .stats_sources.base import StatsSource
+from .stats_sources.base import StatsSource, StatsSourceConfig
 from .stats_sources.direct_pg import DirectPgStatsSource
 from .stats_sources.random_pg import RandomPgStatsSource
 from .logging_config import experiment_logger, query_logger, stats_logger
@@ -30,15 +30,24 @@ class ExperimentRunner:
     
     def __init__(self):
         self.stats_sources = {
-            "direct": DirectPgStatsSource(),
-            "random": RandomPgStatsSource(),
+            "direct": DirectPgStatsSource,
+            "random": RandomPgStatsSource,
         }
     
     def get_available_stats_sources(self) -> List[Tuple[str, str]]:
         """Get list of available statistics sources as (key, display_name) tuples."""
-        return [(key, source.name()) for key, source in self.stats_sources.items()]
+        return [(key, source().name()) for key, source in self.stats_sources.items()]
     
-    def run_experiment(self, session: Session, stats_source: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
+    def get_available_configs(self, stats_source: str) -> List[Tuple[str, str]]:
+        """Get list of available configurations for a stats source as (config_name, display_name) tuples."""
+        if stats_source not in self.stats_sources:
+            return []
+        
+        source_class = self.stats_sources[stats_source]
+        instance = source_class()
+        return instance.get_available_configs()
+    
+    def run_experiment(self, session: Session, stats_source: str, config_name: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
         
         db_name = "test_database"
         
@@ -53,14 +62,20 @@ class ExperimentRunner:
             experiment_logger.error(error_msg)
             raise ValueError(error_msg)
         
-        stats_source_instance = self.stats_sources[stats_source]
+        # Instantiate stats source with the specified configuration
+        source_class = self.stats_sources[stats_source]
+        if config_name and config_name != 'default':
+            config = source_class().load_config(config_name)
+            stats_source_instance = source_class(config)
+        else:
+            stats_source_instance = source_class()
         
         # Create experiment record
         try:
             progress_callback("Creating experiment record...", 0, iterations)
             experiment = Experiment(
                 name=name,
-                stats_source=stats_source_instance.name(),
+                stats_source=stats_source_instance.display_name(),
                 query=query,
                 iterations=iterations
             )

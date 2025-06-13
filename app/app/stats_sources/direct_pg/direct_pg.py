@@ -1,9 +1,12 @@
 from sqlalchemy import text
-from .base import StatsSource
+from ..base import StatsSource, StatsSourceConfig
 from sqlmodel import Session
 
 class DirectPgStatsSource(StatsSource):
     """Statistics source that uses PostgreSQL's built-in statistics."""
+    
+    def __init__(self, config: StatsSourceConfig = None):
+        super().__init__(config)
     
     def apply_statistics(self, session: Session) -> None:
         """Run ANALYZE to ensure built-in statistics are up-to-date."""
