@@ -8,10 +8,14 @@ class Experiment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=200)
     stats_source: str = Field(max_length=100)
+    config_name: Optional[str] = Field(default=None, max_length=100)
+    config_yaml: Optional[str] = Field(default=None)
     query: str
     iterations: int
     avg_time: Optional[float] = Field(default=None)
     stddev_time: Optional[float] = Field(default=None)
+    exit_status: Optional[str] = Field(default="PENDING", max_length=50)  # SUCCESS, FAILED, PENDING
+    experiment_logs: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_executed: bool = Field(default=False)
     

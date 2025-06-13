@@ -11,6 +11,7 @@ from .stats_sources.random_pg import RandomPgStatsSource
 from .logging_config import experiment_logger, query_logger, stats_logger
 from .database import create_database, drop_database, load_dump, get_db_session
 from sqlmodel import Session
+from datetime import datetime
     
 
 class ExperimentError(Exception):
@@ -47,9 +48,15 @@ class ExperimentRunner:
         instance = source_class()
         return instance.get_available_configs()
     
-    def run_experiment(self, session: Session, stats_source: str, config_name: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
+    def run_experiment(self, session: Session, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, progress_callback: Callable[[str, int, int], None], dump_path: str, name: str) -> Experiment:
         
         db_name = "test_database"
+        experiment_logs = []  # Capture all experiment logs
+        
+        def log_and_callback(message: str, current: int, total: int):
+            """Log message and call the progress callback."""
+            experiment_logs.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}")
+            progress_callback(message, current, total)
         
         """Run a complete experiment and return the result."""
         experiment_logger.info(f"Starting new experiment with {stats_source} stats source")
@@ -64,20 +71,54 @@ class ExperimentRunner:
         
         # Instantiate stats source with the specified configuration
         source_class = self.stats_sources[stats_source]
-        if config_name and config_name != 'default':
+        
+        # Determine which configuration to use
+        if config_yaml:
+            # Use the custom YAML configuration
+            import yaml
+            try:
+                config_data = yaml.safe_load(config_yaml)
+                config = StatsSourceConfig(config_data)
+                stats_source_instance = source_class(config)
+                experiment_logger.info(f"Using custom configuration: {config.name}")
+            except Exception as e:
+                error_msg = f"Failed to parse custom configuration YAML: {str(e)}"
+                experiment_logger.error(error_msg)
+                raise ValueError(error_msg)
+        elif config_name and config_name != 'default':
+            # Use the named configuration
             config = source_class().load_config(config_name)
             stats_source_instance = source_class(config)
+            experiment_logger.info(f"Using named configuration: {config_name}")
         else:
+            # Use default configuration
             stats_source_instance = source_class()
+            experiment_logger.info("Using default configuration")
+        
+        # Store the actual YAML that will be used
+        actual_config_yaml = config_yaml
+        if not actual_config_yaml:
+            # If no custom YAML was provided, get the YAML from the configuration
+            if hasattr(stats_source_instance.config, 'settings'):
+                import yaml
+                config_dict = {
+                    'name': stats_source_instance.config.name,
+                    'description': stats_source_instance.config.description,
+                    'settings': stats_source_instance.config.settings
+                }
+                actual_config_yaml = yaml.dump(config_dict, default_flow_style=False)
         
         # Create experiment record
         try:
-            progress_callback("Creating experiment record...", 0, iterations)
+            log_and_callback("Creating experiment record...", 0, iterations)
             experiment = Experiment(
                 name=name,
                 stats_source=stats_source_instance.display_name(),
+                config_name=config_name or 'default',
+                config_yaml=actual_config_yaml,
                 query=query,
-                iterations=iterations
+                iterations=iterations,
+                exit_status="RUNNING"
             )
             session.add(experiment)
             session.commit()
@@ -94,9 +135,9 @@ class ExperimentRunner:
         experiment_db_session = None
         try:
             # Create and setup the temporary database
-            progress_callback(f"Creating temporary database '{db_name}'...", 0, iterations)
+            log_and_callback(f"Creating temporary database '{db_name}'...", 0, iterations)
             create_database(db_name)
-            progress_callback(f"Loading data from '{dump_path}'...", 0, iterations)
+            log_and_callback(f"Loading data from '{dump_path}'...", 0, iterations)
             load_dump(db_name, dump_path)
 
             # Get a session to the temporary database
@@ -105,7 +146,7 @@ class ExperimentRunner:
 
             # Apply statistics
             msg = f"Applying {stats_source_instance.name()} statistics to database..."
-            progress_callback(msg, 0, iterations)
+            log_and_callback(msg, 0, iterations)
             experiment_logger.info(msg)
             
             try:
@@ -123,7 +164,7 @@ class ExperimentRunner:
             
             for i in range(iterations):
                 trial_msg = f"Running trial {i + 1}/{iterations}..."
-                progress_callback(trial_msg, i, iterations)
+                log_and_callback(trial_msg, i, iterations)
                 experiment_logger.info(trial_msg)
                 
                 try:
@@ -148,17 +189,17 @@ class ExperimentRunner:
                     query_logger.debug(f"Query plan: {query_plan}")
                     
                     result_msg = f"Trial {i + 1} completed: Time={execution_time:.4f}s, Cost={cost_estimate:.2f}"
-                    progress_callback(result_msg, i + 1, iterations)
+                    log_and_callback(result_msg, i + 1, iterations)
                     
                 except Exception as e:
                     error_msg = f"Error in trial {i + 1}: {str(e)}"
                     query_logger.error(error_msg)
                     query_logger.debug(traceback.format_exc())
-                    progress_callback(f"⚠️ {error_msg}", i + 1, iterations)
+                    log_and_callback(f"⚠️ {error_msg}", i + 1, iterations)
                     raise QueryExecutionError(error_msg) from e
             
             # Calculate aggregate statistics
-            progress_callback("Calculating final statistics...", iterations, iterations)
+            log_and_callback("Calculating final statistics...", iterations, iterations)
             experiment_logger.info("Computing experiment statistics")
             
             experiment.avg_time = statistics.mean(execution_times)
@@ -185,8 +226,14 @@ class ExperimentRunner:
                 f"Average time: {experiment.avg_time:.4f}s ± {experiment.stddev_time:.4f}s\n"
                 f"Min: {min(execution_times):.4f}s, Max: {max(execution_times):.4f}s"
             )
-            progress_callback(final_msg, iterations, iterations)
+            log_and_callback(final_msg, iterations, iterations)
             experiment_logger.info("Experiment completed successfully")
+            
+            # Save logs and mark as successful
+            experiment.exit_status = "SUCCESS"
+            experiment.experiment_logs = '\n'.join(experiment_logs)
+            session.commit()
+            session.refresh(experiment)
             
             return experiment
             
@@ -195,7 +242,16 @@ class ExperimentRunner:
             error_msg = f"Experiment failed: {str(e)}"
             experiment_logger.error(error_msg)
             experiment_logger.debug(traceback.format_exc())
-            progress_callback(f"❌ {error_msg}", iterations, iterations)
+            log_and_callback(f"❌ {error_msg}", iterations, iterations)
+            
+            # Update experiment with failure status and logs
+            try:
+                experiment.exit_status = "FAILURE"
+                experiment.experiment_logs = '\n'.join(experiment_logs)
+                session.commit()
+            except Exception:
+                pass  # If we can't save, that's ok - the main error is more important
+            
             raise
         finally:
             if experiment_db_session_generator:
@@ -205,7 +261,7 @@ class ExperimentRunner:
                 except StopIteration:
                     pass
             # Drop the temporary database
-            progress_callback(f"Cleaning up temporary database '{db_name}'...", iterations, iterations)
+            log_and_callback(f"Cleaning up temporary database '{db_name}'...", iterations, iterations)
             drop_database(db_name)
             experiment_logger.info(f"Dropped temporary database: {db_name}")
     

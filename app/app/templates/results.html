@@ -38,6 +38,7 @@
                         <tr>
                             <th class="border-0">ID</th>
                             <th class="border-0">Statistics Source</th>
+                            <th class="border-0">Status</th>
                             <th class="border-0">Iterations</th>
                             <th class="border-0">Avg Time (s)</th>
                             <th class="border-0">Std Dev (s)</th>
@@ -54,6 +55,29 @@
                             <td class="align-middle">
                                 <i class="bi bi-database me-1"></i>
                                 {{ experiment.stats_source }}
+                            </td>
+                            <td class="align-middle">
+                                {% if experiment.exit_status == 'SUCCESS' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    SUCCESS
+                                </span>
+                                {% elif experiment.exit_status == 'FAILURE' %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle me-1"></i>
+                                    FAILURE
+                                </span>
+                                {% elif experiment.exit_status == 'RUNNING' %}
+                                <span class="badge bg-primary">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>
+                                    RUNNING
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-clock me-1"></i>
+                                    {{ experiment.exit_status or 'PENDING' }}
+                                </span>
+                                {% endif %}
                             </td>
                             <td class="align-middle">
                                 <i class="bi bi-arrow-repeat me-1"></i>
@@ -97,7 +121,7 @@
                             </td>
                         </tr>
                         <tr id="details-{{ experiment.id }}" class="details-row" style="display: none;">
-                            <td colspan="7" class="p-0">
+                            <td colspan="8" class="p-0">
                                 <!-- Details will be loaded here -->
                             </td>
                         </tr>

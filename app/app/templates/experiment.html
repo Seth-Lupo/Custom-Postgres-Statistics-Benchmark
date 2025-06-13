@@ -59,10 +59,18 @@
                             <i class="bi bi-gear me-1"></i>
                             Configuration
                         </label>
-                        <select class="form-select" id="config_name" name="config_name" disabled>
-                            <option value="" disabled selected>Select a statistics source first</option>
-                        </select>
+                        <div class="input-group">
+                            <select class="form-select" id="config_name" name="config_name" disabled>
+                                <option value="" disabled selected>Select a statistics source first</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-secondary" id="edit-config-btn" disabled onclick="openConfigEditor()">
+                                <i class="bi bi-pencil-square"></i>
+                                Edit
+                            </button>
+                        </div>
                         <div class="form-text">Choose the configuration for the selected statistics source</div>
+                        <!-- Hidden field to store the edited YAML configuration -->
+                        <input type="hidden" id="config_yaml" name="config_yaml" value="">
                     </div>
                 </div>
                 <div class="row">
@@ -151,22 +159,114 @@
     
 </div>
 
+<!-- Configuration Editor Modal -->
+<div class="modal fade" id="configEditorModal" tabindex="-1" aria-labelledby="configEditorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configEditorModalLabel">
+                    <i class="bi bi-gear me-2"></i>
+                    Configuration Editor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="yaml-editor" class="form-label">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                YAML Configuration
+                            </label>
+                            <textarea class="form-control" id="yaml-editor" rows="20" style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;"></textarea>
+                            <div class="form-text">Edit the configuration settings in YAML format</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Configuration Info
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <strong>Source:</strong> <span id="config-source-name">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Original Config:</strong> <span id="config-original-name">-</span>
+                                </div>
+                                <div class="mb-3">
+                                    <strong>Status:</strong> <span id="config-status" class="badge bg-secondary">Ready</span>
+                                </div>
+                                <div class="alert alert-info">
+                                    <small>
+                                        <i class="bi bi-lightbulb me-1"></i>
+                                        <strong>Tip:</strong> Changes will be saved with your experiment and can be viewed in the results.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card mt-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-list-check me-1"></i>
+                                    Common Settings
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><code>analyze_verbose</code> - Enable verbose analyze output</li>
+                                    <li><code>analyze_timeout_seconds</code> - Timeout for operations</li>
+                                    <li><code>clear_caches</code> - Clear database caches</li>
+                                    <li><code>work_mem</code> - Memory for operations</li>
+                                    <li><code>min_stats_value</code> - Min random stats (random only)</li>
+                                    <li><code>max_stats_value</code> - Max random stats (random only)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-primary" onclick="resetConfiguration()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>
+                    Reset to Original
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveConfiguration()">
+                    <i class="bi bi-check2 me-1"></i>
+                    Save Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let currentLogLevel = 'info';
 let logHistory = [];
 let streamClosed = false;
+let originalYamlConfig = '';
+let currentStatsSource = '';
 
 function loadConfigurations(statsSource) {
     const configSelect = document.getElementById('config_name');
+    const editButton = document.getElementById('edit-config-btn');
     
     if (!statsSource) {
         configSelect.disabled = true;
+        editButton.disabled = true;
         configSelect.innerHTML = '<option value="" disabled selected>Select a statistics source first</option>';
         return;
     }
     
+    currentStatsSource = statsSource;
+    
     // Show loading state
     configSelect.disabled = true;
+    editButton.disabled = true;
     configSelect.innerHTML = '<option value="" disabled selected>Loading configurations...</option>';
     
     // Fetch configurations for the selected stats source
@@ -201,12 +301,154 @@ function loadConfigurations(statsSource) {
             });
             
             configSelect.disabled = false;
+            editButton.disabled = false;
+            
+            // Load default configuration if available
+            if (configSelect.value || configSelect.querySelector('option[value="default"]')) {
+                const selectedConfig = configSelect.value || 'default';
+                loadConfigurationYaml(statsSource, selectedConfig);
+            }
         })
         .catch(error => {
             console.error('Error fetching configurations:', error);
             configSelect.innerHTML = '<option value="" disabled selected>Error loading configurations</option>';
         });
 }
+
+function loadConfigurationYaml(statsSource, configName) {
+    fetch(`/experiment/configs/${statsSource}/${configName}/yaml`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error loading YAML:', data.error);
+                return;
+            }
+            originalYamlConfig = data.yaml;
+            // Clear any custom YAML since we're loading a predefined config
+            document.getElementById('config_yaml').value = '';
+        })
+        .catch(error => {
+            console.error('Error fetching YAML:', error);
+        });
+}
+
+function openConfigEditor() {
+    const configSelect = document.getElementById('config_name');
+    const selectedConfig = configSelect.value;
+    
+    if (!selectedConfig || !currentStatsSource) {
+        alert('Please select a configuration first.');
+        return;
+    }
+    
+    // Update modal info
+    document.getElementById('config-source-name').textContent = currentStatsSource;
+    document.getElementById('config-original-name').textContent = selectedConfig;
+    
+    // Check if we have custom YAML already saved
+    const customYaml = document.getElementById('config_yaml').value;
+    
+    if (customYaml && customYaml.trim()) {
+        // Load the previously edited YAML
+        document.getElementById('yaml-editor').value = customYaml;
+        document.getElementById('config-status').textContent = 'Modified';
+        document.getElementById('config-status').className = 'badge bg-success';
+    } else {
+        // Load the original YAML
+        document.getElementById('yaml-editor').value = originalYamlConfig;
+        document.getElementById('config-status').textContent = 'Ready';
+        document.getElementById('config-status').className = 'badge bg-secondary';
+    }
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('configEditorModal'));
+    modal.show();
+}
+
+function resetConfiguration() {
+    document.getElementById('yaml-editor').value = originalYamlConfig;
+    document.getElementById('config-status').textContent = 'Ready';
+    document.getElementById('config-status').className = 'badge bg-secondary';
+    
+    // Clear the hidden config_yaml field to remove custom configuration
+    document.getElementById('config_yaml').value = '';
+    
+    // Reset edit button state to normal
+    const editButton = document.getElementById('edit-config-btn');
+    editButton.innerHTML = '<i class="bi bi-pencil-square"></i> Edit';
+    editButton.classList.remove('btn-outline-success');
+    editButton.classList.add('btn-outline-secondary');
+}
+
+function saveConfiguration() {
+    const yamlContent = document.getElementById('yaml-editor').value.trim();
+    
+    if (!yamlContent) {
+        alert('Configuration cannot be empty.');
+        return;
+    }
+    
+    // Validate YAML syntax (basic check)
+    try {
+        // This is a simple check - the backend will do proper validation
+        if (!yamlContent.includes('name:') || !yamlContent.includes('settings:')) {
+            throw new Error('Configuration must include name and settings sections');
+        }
+    } catch (error) {
+        alert('Invalid YAML configuration: ' + error.message);
+        return;
+    }
+    
+    // Store the edited YAML in the hidden field
+    document.getElementById('config_yaml').value = yamlContent;
+    
+    // Update status
+    document.getElementById('config-status').textContent = 'Modified';
+    document.getElementById('config-status').className = 'badge bg-success';
+    
+    // Close the modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('configEditorModal'));
+    modal.hide();
+    
+    // Visual indication that config has been customized
+    const editButton = document.getElementById('edit-config-btn');
+    editButton.innerHTML = '<i class="bi bi-pencil-square"></i> Modified';
+    editButton.classList.remove('btn-outline-secondary');
+    editButton.classList.add('btn-outline-success');
+}
+
+// Add event listener for configuration selection change
+document.addEventListener('DOMContentLoaded', function() {
+    const configSelect = document.getElementById('config_name');
+    configSelect.addEventListener('change', function() {
+        if (this.value && currentStatsSource) {
+            loadConfigurationYaml(currentStatsSource, this.value);
+            
+            // Check if we have custom YAML that should be cleared when changing configs
+            const existingCustomYaml = document.getElementById('config_yaml').value;
+            
+            // Reset edit button state and clear custom YAML when changing configs
+            const editButton = document.getElementById('edit-config-btn');
+            editButton.innerHTML = '<i class="bi bi-pencil-square"></i> Edit';
+            editButton.classList.remove('btn-outline-success');
+            editButton.classList.add('btn-outline-secondary');
+            
+            // Clear custom YAML since we're switching to a different config
+            document.getElementById('config_yaml').value = '';
+        }
+    });
+    
+    // Check initial state on page load
+    const editButton = document.getElementById('edit-config-btn');
+    const customYaml = document.getElementById('config_yaml').value;
+    
+    if (customYaml && customYaml.trim()) {
+        // Page loaded with existing custom YAML, show as modified
+        editButton.innerHTML = '<i class="bi bi-pencil-square"></i> Modified';
+        editButton.classList.remove('btn-outline-secondary');
+        editButton.classList.add('btn-outline-success');
+    }
+});
 
 function setLogLevel(level, button) {
     currentLogLevel = level;

@@ -63,6 +63,37 @@ def get_configs(stats_source: str):
         }, status_code=500)
 
 
+@router.get("/experiment/configs/{stats_source}/{config_name}/yaml")
+def get_config_yaml(stats_source: str, config_name: str):
+    """Get the raw YAML content for a specific configuration."""
+    try:
+        if stats_source not in experiment_runner.stats_sources:
+            return JSONResponse({
+                "error": f"Unknown stats source: {stats_source}"
+            }, status_code=404)
+        
+        source_class = experiment_runner.stats_sources[stats_source]
+        instance = source_class()
+        config_path = instance._get_config_path(f"{config_name}.yaml")
+        
+        if not config_path.exists():
+            return JSONResponse({
+                "error": f"Configuration file not found: {config_name}"
+            }, status_code=404)
+        
+        with open(config_path, 'r') as f:
+            yaml_content = f.read()
+        
+        return JSONResponse({
+            "yaml": yaml_content
+        })
+    except Exception as e:
+        web_logger.error(f"Failed to get YAML for {stats_source}/{config_name}: {str(e)}")
+        return JSONResponse({
+            "error": f"Failed to get configuration YAML: {str(e)}"
+        }, status_code=500)
+
+
 @router.post("/experiment")
 def run_experiment(
     request: Request,
@@ -70,6 +101,7 @@ def run_experiment(
     experiment_name: str = Form(...),
     stats_source: str = Form(...),
     config_name: str = Form(None),
+    config_yaml: str = Form(None),
     iterations: int = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
@@ -77,7 +109,11 @@ def run_experiment(
 ):
     """Launch an experiment in the background with selected files."""
     try:
-        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source, {iterations} iterations, dump {dump_file}, query {query_file}")
+        config_display = f"config '{config_name}'" if config_name else "default config"
+        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({config_display}), {iterations} iterations, dump {dump_file}, query {query_file}")
+        
+        if config_yaml:
+            web_logger.debug(f"Using custom configuration: {config_yaml[:200]}...")  # Log first 200 chars
 
         # Check if experiment with this name already exists and has been executed
         query = select(ExperimentModel).where(ExperimentModel.name == experiment_name)
@@ -147,7 +183,7 @@ def run_experiment(
             "name": experiment_name
         }
         web_logger.info(f"Created experiment with ID {experiment_id}")
-        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, config_name, query, iterations, dump_path, experiment_name)
+        background_tasks.add_task(run_experiment_background, experiment_id, stats_source, config_name, config_yaml, query, iterations, dump_path, experiment_name)
         return HTMLResponse(f"""
         <div id=\"experiment-result\">
             <div class=\"alert alert-info\">
@@ -269,7 +305,7 @@ async def experiment_stream(experiment_id: int):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, query: str, iterations: int, dump_path: str, name: str):
+def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, config_yaml: str, query: str, iterations: int, dump_path: str, name: str):
     """Run the experiment in the background."""
     db: Session = SessionLocal()
     try:
@@ -287,6 +323,7 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
             session=db,
             stats_source=stats_source,
             config_name=config_name,
+            config_yaml=config_yaml,
             query=query,
             iterations=iterations,
             dump_path=dump_path,
