@@ -182,6 +182,33 @@ class ExperimentRunner:
             experiment_db_session_generator = get_db_session(db_name)
             experiment_db_session = next(experiment_db_session_generator)
 
+            # Set session parameters for consistent execution environment
+            # Maximum time (in ms) a statement can run before being cancelled (0 = no timeout)
+            timeout = stats_source_instance.config.get_setting('statement_timeout_ms', 0)
+            experiment_db_session.execute(text(f"SET statement_timeout = {timeout}"))
+            
+            # Memory allocated for internal sort/hash operations
+            work_mem = stats_source_instance.config.get_setting('work_mem', '16MB') 
+            experiment_db_session.execute(text(f"SET work_mem = '{work_mem}'"))
+            
+            # Memory for maintenance operations like VACUUM, CREATE INDEX
+            maint_work_mem = stats_source_instance.config.get_setting('maintenance_work_mem', '16MB')
+            experiment_db_session.execute(text(f"SET maintenance_work_mem = '{maint_work_mem}'"))
+            
+            # Planner's assumption about size of disk cache
+            cache_size = stats_source_instance.config.get_setting('effective_cache_size', '1GB')
+            experiment_db_session.execute(text(f"SET effective_cache_size = '{cache_size}'"))
+            
+            # Relative cost of non-sequential page reads
+            random_cost = stats_source_instance.config.get_setting('random_page_cost', 1.0)
+            experiment_db_session.execute(text(f"SET random_page_cost = {random_cost}"))
+            
+            # Relative cost of sequential page reads  
+            seq_cost = stats_source_instance.config.get_setting('seq_page_cost', 1.0)
+            experiment_db_session.execute(text(f"SET seq_page_cost = {seq_cost}"))
+            
+            experiment_db_session.commit()
+
             # Apply statistics based on strategy
             if stats_reset_strategy == "once":
                 # Apply statistics once before all trials
@@ -380,13 +407,6 @@ class ExperimentRunner:
             finally:
                 conn.set_session(autocommit=False)
             
-            # Set session parameters for consistent execution environment
-            session.execute(text("SET LOCAL statement_timeout = 0"))
-            session.execute(text("SET LOCAL work_mem = '16MB'"))
-            session.execute(text("SET LOCAL maintenance_work_mem = '16MB'"))
-            session.execute(text("SET LOCAL effective_cache_size = '1GB'"))
-            session.execute(text("SET LOCAL random_page_cost = 1.0"))
-            session.execute(text("SET LOCAL seq_page_cost = 1.0"))
             session.commit()
             query_logger.debug("Enhanced cache clearing and environment setup completed")
             

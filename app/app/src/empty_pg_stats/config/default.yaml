@@ -1,0 +1,7 @@
+name: "Default Empty PG Stats"
+description: "Clears all caches and statistics counters in PostgreSQL. Does not run ANALYZE."
+settings:
+  clear_caches: true
+  reset_counters: true
+  # analyze_verbose is not used by this source
+  analyze_verbose: false 
