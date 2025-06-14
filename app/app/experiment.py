@@ -251,7 +251,12 @@ class ExperimentRunner:
                             raise StatsApplicationError(error_msg) from e
                     
                     # Execute the trial with transaction handling
-                    execution_time, cost_estimate, query_plan = self._run_single_trial(experiment_db_session, query, transaction_handling)
+                    execution_time, cost_estimate, query_plan = self._run_single_trial(
+                        experiment_db_session, 
+                        query, 
+                        transaction_handling,
+                        stats_source_instance
+                    )
                     execution_times.append(execution_time)
                     query_plans.append(query_plan)
                     
@@ -372,45 +377,43 @@ class ExperimentRunner:
             drop_database(db_name)
             experiment_logger.info(f"Dropped temporary database: {db_name}")
     
-    def _run_single_trial(self, session: Session, query: str, transaction_handling: str) -> Tuple[float, float, Dict[str, Any]]:
+    def _run_single_trial(self, session: Session, query: str, transaction_handling: str, stats_source_instance: StatsSource) -> Tuple[float, float, Dict[str, Any]]:
         """Run a single trial and return (execution_time, cost_estimate, query_plan)."""
         query_logger.debug(f"Starting new trial with query: {query} (transaction handling: {transaction_handling})")
         
         try:
             # Enhanced cache clearing before trial
-            session.commit()  # Commit any pending transaction
-            
-            # Clear all caches comprehensively
-            query_logger.debug("Performing comprehensive cache clearing...")
-            
-            # These operations need to be outside a transaction
-            conn = session.connection().connection
-            conn.set_session(autocommit=True)
-            try:
-                # Clear all session-level caches and temporary objects
-                session.execute(text("DISCARD ALL"))
-                # Reset all runtime statistics
+            if stats_source_instance.config.get_setting('clear_caches', True):
+                session.commit()
+                query_logger.debug("Performing comprehensive cache clearing...")
+                conn = session.connection().connection
+                conn.set_session(autocommit=True)
+                try:
+                    session.execute(text("DISCARD ALL"))
+                finally:
+                    conn.set_session(autocommit=False)
+                session.commit()
+                query_logger.debug("Cache clearing completed.")
+
+            # Reset statistics if configured
+            if stats_source_instance.config.get_setting('reset_counters', True):
+                query_logger.debug("Resetting statistics counters...")
                 session.execute(text("SELECT pg_stat_reset()"))
-                # Clear shared buffer cache (if possible)
                 try:
                     session.execute(text("SELECT pg_stat_reset_shared('bgwriter')"))
                     session.execute(text("SELECT pg_stat_reset_shared('archiver')"))
                 except Exception:
                     query_logger.debug("Some shared statistics reset operations not available")
                 
-                # Reset pg_stat_statements if available
                 try:
                     session.execute(text("SELECT pg_stat_statements_reset()"))
                 except Exception:
                     query_logger.debug("pg_stat_statements extension not available, skipping reset")
-                
-            finally:
-                conn.set_session(autocommit=False)
-            
-            session.commit()
-            query_logger.debug("Enhanced cache clearing and environment setup completed")
-            
-            # Get query plan and cost estimate (this doesn't modify data)
+                session.commit()
+                query_logger.debug("Statistics counters reset.")
+
+            # Get query plan (EXPLAIN)
+            query_logger.debug("Generating query plan using EXPLAIN...")
             explain_query = text(f"EXPLAIN (FORMAT JSON) {query}")
             explain_result = session.execute(explain_query)
             explain_result = explain_result.fetchone()
@@ -466,14 +469,12 @@ class ExperimentRunner:
             return execution_time, cost_estimate, query_plan
             
         except Exception as e:
-            session.rollback()  # Rollback on error
-            error_msg = f"Error during query execution: {str(e)}"
-            query_logger.error(error_msg)
+            query_logger.error(f"Error during trial execution: {str(e)}")
             query_logger.debug(traceback.format_exc())
-            raise QueryExecutionError(error_msg) from e 
+            raise QueryExecutionError(f"Trial failed: {str(e)}") from e
 
     def _capture_statistics_snapshots(self, session: Session) -> Tuple[str, str]:
-        """Capture pg_stats and pg_statistic snapshots and return as JSON strings."""
+        """Capture snapshots of pg_stats and pg_statistic."""
         try:
             # Capture pg_stats snapshot (public schema only)
             pg_stats_query = text("""
