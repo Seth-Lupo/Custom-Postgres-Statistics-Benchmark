@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from ..database import SessionLocal
 from ..experiment import ExperimentRunner, ExperimentError
-from ..logging_config import web_logger
+from ..logging_config import web_logger, stats_source_logger
 
 # Global experiment runner instance
 experiment_runner = ExperimentRunner()
@@ -95,6 +95,29 @@ def run_experiment_background(experiment_id: int, stats_source: str,
             
             web_logger.debug(f"Experiment {experiment_id} progress: {progress_percent}% - {message}")
         
+        # Create stats source log callback to capture stats source logger messages
+        def stats_source_log_callback(log_level: str, message: str):
+            """
+            Capture stats source log messages and forward them to experiment status.
+            
+            Args:
+                log_level: Log level (INFO, WARNING, ERROR, etc.)
+                message: Log message from stats source
+            """
+            if experiment_id not in experiment_status:
+                return
+                
+            # Add timestamped message for frontend display
+            timestamped_message = f"[{datetime.utcnow().strftime('%H:%M:%S')}] {message}"
+            experiment_status[experiment_id]["messages"].append(timestamped_message)
+            
+            web_logger.debug(f"Stats source log for experiment {experiment_id}: {message}")
+        
+        # Set up stats source logger stream callback
+        if hasattr(stats_source_logger, 'stream_handler'):
+            stats_source_logger.stream_handler.set_stream_callback(stats_source_log_callback)
+            web_logger.debug(f"Set up stats source logger stream callback for experiment {experiment_id}")
+        
         # Execute the experiment using the experiment runner
         web_logger.info(f"Running experiment {experiment_id} with parameters:")
         web_logger.info(f"  Stats source: {stats_source}")
@@ -158,6 +181,11 @@ def run_experiment_background(experiment_id: int, stats_source: str,
             experiment_status[experiment_id]["messages"].append(timestamped_error)
         
     finally:
+        # Clean up stats source logger stream callback
+        if hasattr(stats_source_logger, 'stream_handler'):
+            stats_source_logger.stream_handler.set_stream_callback(None)
+            web_logger.debug(f"Cleaned up stats source logger stream callback for experiment {experiment_id}")
+        
         # Always close the database session
         db.close()
         web_logger.debug(f"Database session closed for experiment {experiment_id}")
