@@ -35,48 +35,32 @@ document.addEventListener('DOMContentLoaded', function() {
  * Setup HTMX event handlers for experiment tracking
  */
 function setupHTMXEventHandlers() {
-    // After successful submission
-    document.body.addEventListener('htmx:afterRequest', function(event) {
-        if (event.detail.xhr.status === 200 && event.detail.target.id === 'experiment-container') {
-            const response = JSON.parse(event.detail.xhr.responseText);
-            if (response.experiment_id) {
-                currentExperimentId = response.experiment_id;
+    console.log('Setting up HTMX event handlers...');
+    
+    // Listen for HTMX after swap events to initialize SSE connections
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        console.log('HTMX after swap event received:', event);
+        
+        // Check if the swapped content contains experiment progress
+        const experimentResult = event.detail.target.querySelector('#experiment-result');
+        if (experimentResult) {
+            console.log('Found experiment result in swapped content');
+            // Extract experiment ID from progress bar ID
+            const progressBar = experimentResult.querySelector('[id^="progress-bar-"]');
+            if (progressBar) {
+                const experimentId = progressBar.id.replace('progress-bar-', '');
+                currentExperimentId = parseInt(experimentId);
+                console.log('Starting SSE connection for experiment:', currentExperimentId);
                 initializeExperimentProgress(currentExperimentId);
+            } else {
+                console.log('No progress bar found in experiment result');
             }
+        } else {
+            console.log('No experiment result found in swapped content');
         }
     });
-
-    // Before form submission
-    document.body.addEventListener('htmx:beforeRequest', function(event) {
-        if (event.detail.target.id === 'experiment-form') {
-            // Clear any previous experiment state
-            currentExperimentId = null;
-            logHistory = [];
-            streamClosed = false;
-            
-            // Close any existing event source
-            cleanupEventSource();
-        }
-    });
-
-    // On error
-    document.body.addEventListener('htmx:responseError', function(event) {
-        console.error('HTMX Request Error:', event.detail);
-        if (event.detail.target.id === 'experiment-container') {
-            const errorContainer = document.getElementById('experiment-container');
-            if (errorContainer) {
-                errorContainer.innerHTML = `
-                    <div class="alert alert-danger" role="alert">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        <strong>Error:</strong> Failed to start experiment. Please check your inputs and try again.
-                    </div>
-                `;
-            }
-        }
-    });
-
-    // Clean up on unload
-    window.addEventListener('beforeunload', cleanupEventSource);
+    
+    console.log('HTMX event handlers setup complete');
 }
 
 /**
@@ -159,24 +143,25 @@ function handleSSEMessage(data) {
 
 /**
  * Handle running status updates
- * @param {Object} data - The SSE data for running status
+ * @param {Object} data - SSE message data
  */
 function handleRunningStatus(data) {
-    // Update progress bar if progress info is available
-    if (data.current !== undefined && data.total !== undefined) {
-        updateProgressBar(data.current, data.total);
+    // Update progress bar
+    if (data.progress !== undefined) {
+        updateProgressBar(data.progress, 100);
     }
     
-    // Add log message if available
-    if (data.message) {
-        const level = data.level || 'info';
-        addLogMessage(data.message, level);
+    // Add new messages to log
+    if (data.messages && Array.isArray(data.messages)) {
+        data.messages.forEach(message => {
+            addLogMessage(message, data.log_level || 'info');
+        });
     }
 }
 
 /**
  * Handle completed status
- * @param {Object} data - The SSE data for completed status
+ * @param {Object} data - SSE message data
  */
 function handleCompletedStatus(data) {
     console.log('Experiment completed successfully');
@@ -195,21 +180,27 @@ function handleCompletedStatus(data) {
     // Add completion message
     addLogMessage('✅ Experiment completed successfully!', 'info');
     
-    // Update experiment container with final HTML if provided
+    // Append completion HTML if provided (don't replace entire container)
     if (data.html) {
-        updateExperimentContainer(data.html);
+        const experimentContainer = document.getElementById('experiment-container');
+        if (experimentContainer) {
+            // Create a wrapper div for the completion content
+            const completionDiv = document.createElement('div');
+            completionDiv.innerHTML = data.html;
+            experimentContainer.appendChild(completionDiv);
+        }
     }
 }
 
 /**
  * Handle error status
- * @param {Object} data - The SSE data for error status
+ * @param {Object} data - SSE message data
  */
 function handleErrorStatus(data) {
-    const errorMessage = data.message || 'Unknown error occurred';
-    console.error('Experiment error:', errorMessage);
+    streamClosed = true;
     
     // Add error message to log
+    const errorMessage = data.error || 'Unknown error occurred';
     addLogMessage(`❌ Error: ${errorMessage}`, 'error');
     
     // Close EventSource connection
