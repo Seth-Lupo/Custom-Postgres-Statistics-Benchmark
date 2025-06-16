@@ -11,165 +11,183 @@
  * Created: 2024
  */
 
-// Global variables for experiment form functionality
-let currentLogLevel = 'info';
-let logHistory = [];
-let streamClosed = false;
-let originalYamlConfig = '';
-let currentStatsSource = '';
+// Global variables for experiment tracking
 let currentExperimentId = null;
 let eventSource = null;
+let logHistory = [];
+let currentLogLevel = 'info';
+let streamClosed = false;
+let currentStatsSource = null;
+let originalSettingsYaml = '';
+let originalConfigYaml = '';
 
 /**
- * Initialize experiment form functionality when DOM is loaded
+ * Initialize everything when DOM is loaded
  */
 document.addEventListener('DOMContentLoaded', function() {
+    setupHTMXEventHandlers();
     initializeFormValidation();
     initializeConfigurationHandlers();
     checkInitialConfigState();
-    setupHTMXEventHandlers();
 });
 
 /**
- * Set up HTMX event handlers for experiment progress
+ * Setup HTMX event handlers for experiment tracking
  */
 function setupHTMXEventHandlers() {
-    console.log('Setting up HTMX event handlers...');
-    
-    // Listen for HTMX after swap events to initialize SSE connections
-    document.body.addEventListener('htmx:afterSwap', function(event) {
-        console.log('HTMX after swap event received:', event);
-        
-        // Check if the swapped content contains experiment progress
-        const experimentResult = event.detail.target.querySelector('#experiment-result');
-        if (experimentResult) {
-            console.log('Found experiment result in swapped content');
-            // Extract experiment ID from progress bar ID
-            const progressBar = experimentResult.querySelector('[id^="progress-bar-"]');
-            if (progressBar) {
-                const experimentId = progressBar.id.replace('progress-bar-', '');
-                currentExperimentId = parseInt(experimentId);
-                console.log('Starting SSE connection for experiment:', currentExperimentId);
+    // After successful submission
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail.xhr.status === 200 && event.detail.target.id === 'experiment-container') {
+            const response = JSON.parse(event.detail.xhr.responseText);
+            if (response.experiment_id) {
+                currentExperimentId = response.experiment_id;
                 initializeExperimentProgress(currentExperimentId);
-                
-                // Start pure JavaScript EventSource connection
-                startEventSourceConnection(currentExperimentId);
-            } else {
-                console.log('No progress bar found in experiment result');
             }
-        } else {
-            console.log('No experiment result found in swapped content');
         }
     });
-    
-    console.log('HTMX event handlers setup complete');
+
+    // Before form submission
+    document.body.addEventListener('htmx:beforeRequest', function(event) {
+        if (event.detail.target.id === 'experiment-form') {
+            // Clear any previous experiment state
+            currentExperimentId = null;
+            logHistory = [];
+            streamClosed = false;
+            
+            // Close any existing event source
+            cleanupEventSource();
+        }
+    });
+
+    // On error
+    document.body.addEventListener('htmx:responseError', function(event) {
+        console.error('HTMX Request Error:', event.detail);
+        if (event.detail.target.id === 'experiment-container') {
+            const errorContainer = document.getElementById('experiment-container');
+            if (errorContainer) {
+                errorContainer.innerHTML = `
+                    <div class="alert alert-danger" role="alert">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Error:</strong> Failed to start experiment. Please check your inputs and try again.
+                    </div>
+                `;
+            }
+        }
+    });
+
+    // Clean up on unload
+    window.addEventListener('beforeunload', cleanupEventSource);
 }
 
 /**
- * Start EventSource connection for real-time experiment updates
- * @param {number} experimentId - The experiment ID to track
+ * Start EventSource connection for real-time updates
+ * @param {string} experimentId - The experiment ID to track
  */
 function startEventSourceConnection(experimentId) {
-    // Close any existing connection
-    if (eventSource) {
-        eventSource.close();
-    }
+    const eventSourceUrl = `/experiment/stream/${experimentId}`;
+    console.log(`Starting EventSource connection to: ${eventSourceUrl}`);
     
-    const url = `/experiment/stream/${experimentId}`;
-    console.log('Opening EventSource connection to:', url);
+    eventSource = new EventSource(eventSourceUrl);
     
-    eventSource = new EventSource(url);
-    
-    eventSource.onopen = function(event) {
-        console.log('EventSource connection opened:', event);
-        addLogMessage('🔗 Real-time connection established', 'info');
+    eventSource.onopen = function() {
+        console.log('EventSource connection opened');
     };
     
     eventSource.onmessage = function(event) {
-        console.log('EventSource message received:', event.data);
         try {
             const data = JSON.parse(event.data);
-            console.log('Parsed EventSource data:', data);
+            console.log('SSE Message received:', data);
             handleSSEMessage(data);
         } catch (error) {
-            console.error('Error parsing EventSource message:', error, 'Raw data:', event.data);
+            console.error('Error parsing SSE message:', error);
         }
     };
     
-    eventSource.onerror = function(event) {
-        console.error('EventSource error:', event);
+    eventSource.onerror = function(error) {
+        console.error('EventSource error:', error);
+        
+        // Check if connection is closed
         if (eventSource.readyState === EventSource.CLOSED) {
-            console.log('EventSource connection closed');
-            addLogMessage('🔌 Connection closed', 'info');
-        } else {
-            console.error('EventSource connection error');
-            addLogMessage('❌ Connection error', 'error');
+            console.log('EventSource connection closed by server');
+            streamClosed = true;
         }
     };
 }
 
 /**
- * Initialize experiment progress tracking for a specific experiment
- * @param {number} experimentId - The experiment ID to track
+ * Initialize experiment progress tracking
+ * @param {string} experimentId - The experiment ID to track
  */
 function initializeExperimentProgress(experimentId) {
-    currentExperimentId = experimentId;
-    logHistory = [];
-    streamClosed = false;
+    console.log(`Initializing progress tracking for experiment: ${experimentId}`);
     
-    // Initialize progress display
-    updateProgressBar(0, 0);
-    clearProgressLog();
+    // Start EventSource connection
+    startEventSourceConnection(experimentId);
     
-    // Add initial status message
-    addLogMessage('⏳ Initializing experiment...', 'info');
-    
-    console.log(`Initialized progress tracking for experiment ${experimentId}`);
+    // Initialize log level filter buttons if they exist
+    const logLevelButtons = document.querySelectorAll('[onclick^="setLogLevel"]');
+    if (logLevelButtons.length > 0) {
+        // Set default to info level
+        const infoButton = Array.from(logLevelButtons).find(btn => btn.textContent.trim() === 'Info');
+        if (infoButton) {
+            setLogLevel('info', infoButton);
+        }
+    }
 }
 
 /**
- * Handle incoming SSE messages
- * @param {Object} data - Parsed SSE message data
+ * Handle SSE (Server-Sent Events) messages
+ * @param {Object} data - The parsed SSE data
  */
 function handleSSEMessage(data) {
-    console.log('Received SSE message:', data);
+    console.log('Processing SSE message:', data);
     
-    if (data.status === 'running') {
-        handleRunningStatus(data);
-    } else if (data.status === 'completed') {
-        handleCompletedStatus(data);
-    } else if (data.status === 'error') {
-        handleErrorStatus(data);
-    } else if (data.html) {
-        // Handle direct HTML updates
-        updateExperimentContainer(data.html);
+    switch (data.status) {
+        case 'running':
+            handleRunningStatus(data);
+            break;
+        case 'completed':
+            handleCompletedStatus(data);
+            break;
+        case 'error':
+            handleErrorStatus(data);
+            break;
+        default:
+            console.warn('Unknown status in SSE message:', data.status);
     }
 }
 
 /**
  * Handle running status updates
- * @param {Object} data - SSE message data
+ * @param {Object} data - The SSE data for running status
  */
 function handleRunningStatus(data) {
-    // Update progress bar
-    if (data.progress !== undefined) {
-        updateProgressBar(data.progress, 100);
+    // Update progress bar if progress info is available
+    if (data.current !== undefined && data.total !== undefined) {
+        updateProgressBar(data.current, data.total);
     }
     
-    // Add new messages to log
-    if (data.messages && Array.isArray(data.messages)) {
-        data.messages.forEach(message => {
-            addLogMessage(message, data.log_level || 'info');
-        });
+    // Add log message if available
+    if (data.message) {
+        const level = data.level || 'info';
+        addLogMessage(data.message, level);
     }
 }
 
 /**
  * Handle completed status
- * @param {Object} data - SSE message data
+ * @param {Object} data - The SSE data for completed status
  */
 function handleCompletedStatus(data) {
-    streamClosed = true;
+    console.log('Experiment completed successfully');
+    
+    // Close EventSource connection
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        streamClosed = true;
+        console.log('EventSource connection closed after completion');
+    }
     
     // Update progress to 100%
     updateProgressBar(100, 100);
@@ -177,36 +195,21 @@ function handleCompletedStatus(data) {
     // Add completion message
     addLogMessage('✅ Experiment completed successfully!', 'info');
     
-    // Close EventSource connection
-    if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-        console.log('EventSource connection closed after completion');
-    }
-    
-    // Show completion HTML if provided
+    // Update experiment container with final HTML if provided
     if (data.html) {
-        const experimentContainer = document.getElementById('experiment-container');
-        if (experimentContainer) {
-            // Append the completion message after the existing content
-            const completionDiv = document.createElement('div');
-            completionDiv.innerHTML = data.html;
-            experimentContainer.appendChild(completionDiv);
-        }
+        updateExperimentContainer(data.html);
     }
-    
-    console.log('Experiment completed successfully');
 }
 
 /**
  * Handle error status
- * @param {Object} data - SSE message data
+ * @param {Object} data - The SSE data for error status
  */
 function handleErrorStatus(data) {
-    streamClosed = true;
+    const errorMessage = data.message || 'Unknown error occurred';
+    console.error('Experiment error:', errorMessage);
     
     // Add error message to log
-    const errorMessage = data.error || 'Unknown error occurred';
     addLogMessage(`❌ Error: ${errorMessage}`, 'error');
     
     // Close EventSource connection
@@ -390,10 +393,20 @@ function initializeFormValidation() {
  */
 function initializeConfigurationHandlers() {
     const configSelect = document.getElementById('config_name');
+    const settingsSelect = document.getElementById('settings_name');
+    
     if (configSelect) {
         configSelect.addEventListener('change', function () {
             if (this.value && currentStatsSource) {
                 loadConfigurationYaml(currentStatsSource, this.value);
+            }
+        });
+    }
+    
+    if (settingsSelect) {
+        settingsSelect.addEventListener('change', function () {
+            if (this.value) {
+                loadSettingsYaml(this.value);
             }
         });
     }
@@ -403,72 +416,107 @@ function initializeConfigurationHandlers() {
  * Check initial configuration state on page load
  */
 function checkInitialConfigState() {
-    const editButton = document.getElementById('edit-config-btn');
-    const customYaml = document.getElementById('config_yaml');
+    const editConfigButton = document.getElementById('edit-config-btn');
+    const editSettingsButton = document.getElementById('edit-settings-btn');
+    const customConfigYaml = document.getElementById('config_yaml');
+    const customSettingsYaml = document.getElementById('settings_yaml');
     
-    if (editButton && customYaml && customYaml.value && customYaml.value.trim()) {
-        editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
-        editButton.classList.remove('btn-outline-secondary');
-        editButton.classList.add('btn-outline-warning');
+    if (editConfigButton && customConfigYaml && customConfigYaml.value && customConfigYaml.value.trim()) {
+        editConfigButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
+        editConfigButton.classList.remove('btn-outline-secondary');
+        editConfigButton.classList.add('btn-outline-warning');
+    }
+    
+    if (editSettingsButton && customSettingsYaml && customSettingsYaml.value && customSettingsYaml.value.trim()) {
+        editSettingsButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
+        editSettingsButton.classList.remove('btn-outline-secondary');
+        editSettingsButton.classList.add('btn-outline-warning');
     }
 }
 
 /**
- * Load available configurations for a selected statistics source
+ * Load available settings and configurations for a selected statistics source
  * @param {string} statsSource - The selected statistics source identifier
  */
-function loadConfigurations(statsSource) {
+function loadSettingsAndConfigurations(statsSource) {
+    const settingsSelect = document.getElementById('settings_name');
     const configSelect = document.getElementById('config_name');
-    const editButton = document.getElementById('edit-config-btn');
+    const editSettingsButton = document.getElementById('edit-settings-btn');
+    const editConfigButton = document.getElementById('edit-config-btn');
 
     if (!statsSource) {
-        resetConfigurationControls(configSelect, editButton);
+        resetSettingsAndConfigurationControls(settingsSelect, configSelect, editSettingsButton, editConfigButton);
         return;
     }
 
     currentStatsSource = statsSource;
-    showConfigurationLoading(configSelect, editButton);
+    showSettingsAndConfigurationLoading(settingsSelect, configSelect, editSettingsButton, editConfigButton);
 
-    // Fetch configurations for the selected stats source
-    fetch(`/experiment/configs/${statsSource}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                handleConfigurationError(configSelect, data.error);
-                return;
-            }
+    // Load settings and configurations in parallel
+    Promise.all([
+        fetch('/experiment/settings').then(response => response.json()),
+        fetch(`/experiment/configs/${statsSource}`).then(response => response.json())
+    ])
+    .then(([settingsData, configsData]) => {
+        // Handle settings
+        if (settingsData.error) {
+            handleSettingsError(settingsSelect, settingsData.error);
+        } else if (!settingsData.settings || settingsData.settings.length === 0) {
+            showNoSettingsAvailable(settingsSelect);
+        } else {
+            populateSettingsOptions(settingsSelect, settingsData.settings);
+            enableSettingsControls(settingsSelect, editSettingsButton);
+            loadDefaultSettings(settingsSelect);
+        }
 
-            if (!data.configs || data.configs.length === 0) {
-                showNoConfigurationsAvailable(configSelect);
-                return;
-            }
-
-            populateConfigurationOptions(configSelect, data.configs);
-            enableConfigurationControls(configSelect, editButton);
+        // Handle configurations
+        if (configsData.error) {
+            handleConfigurationError(configSelect, configsData.error);
+        } else if (!configsData.configs || configsData.configs.length === 0) {
+            showNoConfigurationsAvailable(configSelect);
+        } else {
+            populateConfigurationOptions(configSelect, configsData.configs);
+            enableConfigurationControls(configSelect, editConfigButton);
             loadDefaultConfiguration(configSelect);
-        })
-        .catch(error => {
-            console.error('Error fetching configurations:', error);
-            handleConfigurationError(configSelect, 'Error loading configurations');
-        });
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching settings and configurations:', error);
+        handleSettingsError(settingsSelect, 'Error loading settings');
+        handleConfigurationError(configSelect, 'Error loading configurations');
+    });
 }
 
 /**
- * Reset configuration controls to initial state
+ * Reset settings and configuration controls to initial state
  */
-function resetConfigurationControls(configSelect, editButton) {
+function resetSettingsAndConfigurationControls(settingsSelect, configSelect, editSettingsButton, editConfigButton) {
+    settingsSelect.disabled = true;
     configSelect.disabled = true;
-    editButton.disabled = true;
+    editSettingsButton.disabled = true;
+    editConfigButton.disabled = true;
+    settingsSelect.innerHTML = '<option value="" disabled selected>Select a statistics source first</option>';
     configSelect.innerHTML = '<option value="" disabled selected>Select a statistics source first</option>';
 }
 
 /**
- * Show loading state for configuration controls
+ * Show loading state for settings and configuration controls
  */
-function showConfigurationLoading(configSelect, editButton) {
+function showSettingsAndConfigurationLoading(settingsSelect, configSelect, editSettingsButton, editConfigButton) {
+    settingsSelect.disabled = true;
     configSelect.disabled = true;
-    editButton.disabled = true;
+    editSettingsButton.disabled = true;
+    editConfigButton.disabled = true;
+    settingsSelect.innerHTML = '<option value="" disabled selected>Loading settings...</option>';
     configSelect.innerHTML = '<option value="" disabled selected>Loading configurations...</option>';
+}
+
+/**
+ * Handle settings loading errors
+ */
+function handleSettingsError(settingsSelect, errorMessage) {
+    settingsSelect.innerHTML = '<option value="" disabled selected>Error loading settings</option>';
+    console.error('Settings loading error:', errorMessage);
 }
 
 /**
@@ -480,10 +528,34 @@ function handleConfigurationError(configSelect, errorMessage) {
 }
 
 /**
+ * Show message when no settings are available
+ */
+function showNoSettingsAvailable(settingsSelect) {
+    settingsSelect.innerHTML = '<option value="" disabled selected>No settings available</option>';
+}
+
+/**
  * Show message when no configurations are available
  */
 function showNoConfigurationsAvailable(configSelect) {
     configSelect.innerHTML = '<option value="" disabled selected>No configurations available</option>';
+}
+
+/**
+ * Populate settings select with available options
+ */
+function populateSettingsOptions(settingsSelect, settings) {
+    settingsSelect.innerHTML = '<option value="" disabled selected>Select settings</option>';
+    
+    settings.forEach(([key, description]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = description;
+        if (key === 'default') {
+            option.selected = true;
+        }
+        settingsSelect.appendChild(option);
+    });
 }
 
 /**
@@ -504,11 +576,29 @@ function populateConfigurationOptions(configSelect, configs) {
 }
 
 /**
+ * Enable settings controls after successful loading
+ */
+function enableSettingsControls(settingsSelect, editSettingsButton) {
+    settingsSelect.disabled = false;
+    editSettingsButton.disabled = false;
+}
+
+/**
  * Enable configuration controls after successful loading
  */
-function enableConfigurationControls(configSelect, editButton) {
+function enableConfigurationControls(configSelect, editConfigButton) {
     configSelect.disabled = false;
-    editButton.disabled = false;
+    editConfigButton.disabled = false;
+}
+
+/**
+ * Load default settings if available
+ */
+function loadDefaultSettings(settingsSelect) {
+    if (settingsSelect.value || settingsSelect.querySelector('option[value="default"]')) {
+        const selectedSettings = settingsSelect.value || 'default';
+        loadSettingsYaml(selectedSettings);
+    }
 }
 
 /**
@@ -522,6 +612,31 @@ function loadDefaultConfiguration(configSelect) {
 }
 
 /**
+ * Load YAML settings content for editing
+ * @param {string} settingsName - Settings name
+ */
+function loadSettingsYaml(settingsName) {
+    fetch(`/experiment/settings/${settingsName}/yaml`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error loading settings YAML:', data.error);
+                return;
+            }
+            
+            originalSettingsYaml = data.yaml;
+            // Clear any custom YAML since we're loading a predefined setting
+            document.getElementById('settings_yaml').value = '';
+
+            // Reset edit button state
+            resetEditSettingsButtonState();
+        })
+        .catch(error => {
+            console.error('Error fetching settings YAML:', error);
+        });
+}
+
+/**
  * Load YAML configuration content for editing
  * @param {string} statsSource - Statistics source identifier
  * @param {string} configName - Configuration name
@@ -531,30 +646,63 @@ function loadConfigurationYaml(statsSource, configName) {
         .then(response => response.json())
         .then(data => {
             if (data.error) {
-                console.error('Error loading YAML:', data.error);
+                console.error('Error loading config YAML:', data.error);
                 return;
             }
             
-            originalYamlConfig = data.yaml;
+            originalConfigYaml = data.yaml;
             // Clear any custom YAML since we're loading a predefined config
             document.getElementById('config_yaml').value = '';
 
             // Reset edit button state
-            resetEditButtonState();
+            resetEditConfigButtonState();
         })
         .catch(error => {
-            console.error('Error fetching YAML:', error);
+            console.error('Error fetching config YAML:', error);
         });
 }
 
 /**
- * Reset edit button to default state
+ * Reset edit settings button to default state
  */
-function resetEditButtonState() {
+function resetEditSettingsButtonState() {
+    const editButton = document.getElementById('edit-settings-btn');
+    editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit';
+    editButton.classList.remove('btn-outline-success', 'btn-outline-warning');
+    editButton.classList.add('btn-outline-secondary');
+}
+
+/**
+ * Reset edit config button to default state
+ */
+function resetEditConfigButtonState() {
     const editButton = document.getElementById('edit-config-btn');
     editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit';
     editButton.classList.remove('btn-outline-success', 'btn-outline-warning');
     editButton.classList.add('btn-outline-secondary');
+}
+
+/**
+ * Open the settings editor modal
+ */
+function openSettingsEditor() {
+    const settingsSelect = document.getElementById('settings_name');
+    const selectedSettings = settingsSelect.value;
+
+    if (!selectedSettings) {
+        alert('Please select settings first.');
+        return;
+    }
+
+    // Update modal info
+    updateSettingsModalInfo(selectedSettings);
+    
+    // Load appropriate YAML content
+    loadSettingsYamlIntoEditor();
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('settingsEditorModal'));
+    modal.show();
 }
 
 /**
@@ -570,10 +718,10 @@ function openConfigEditor() {
     }
 
     // Update modal info
-    updateModalInfo(selectedConfig);
+    updateConfigModalInfo(selectedConfig);
     
     // Load appropriate YAML content
-    loadYamlIntoEditor();
+    loadConfigYamlIntoEditor();
     
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('configEditorModal'));
@@ -581,27 +729,62 @@ function openConfigEditor() {
 }
 
 /**
+ * Update settings modal information
+ */
+function updateSettingsModalInfo(selectedSettings) {
+    document.getElementById('settings-name').textContent = selectedSettings;
+}
+
+/**
  * Update configuration modal information
  */
-function updateModalInfo(selectedConfig) {
+function updateConfigModalInfo(selectedConfig) {
     document.getElementById('config-source-name').textContent = currentStatsSource;
     document.getElementById('config-original-name').textContent = selectedConfig;
 }
 
 /**
- * Load YAML content into the editor
+ * Load settings YAML content into the editor
  */
-function loadYamlIntoEditor() {
+function loadSettingsYamlIntoEditor() {
+    const customYaml = document.getElementById('settings_yaml').value;
+    
+    if (customYaml && customYaml.trim()) {
+        // Load the previously edited YAML
+        document.getElementById('settings-yaml-editor').value = customYaml;
+        updateSettingsStatus('Modified', 'badge bg-warning');
+    } else {
+        // Load the original YAML
+        document.getElementById('settings-yaml-editor').value = originalSettingsYaml;
+        updateSettingsStatus('Unchanged', 'badge bg-secondary');
+    }
+}
+
+/**
+ * Load config YAML content into the editor
+ */
+function loadConfigYamlIntoEditor() {
     const customYaml = document.getElementById('config_yaml').value;
     
     if (customYaml && customYaml.trim()) {
         // Load the previously edited YAML
-        document.getElementById('yaml-editor').value = customYaml;
+        document.getElementById('config-yaml-editor').value = customYaml;
         updateConfigStatus('Modified', 'badge bg-warning');
     } else {
         // Load the original YAML
-        document.getElementById('yaml-editor').value = originalYamlConfig;
+        document.getElementById('config-yaml-editor').value = originalConfigYaml;
         updateConfigStatus('Unchanged', 'badge bg-secondary');
+    }
+}
+
+/**
+ * Update settings status display
+ */
+function updateSettingsStatus(statusText, statusClass) {
+    const statusElement = document.getElementById('settings-status');
+    if (statusElement) {
+        statusElement.textContent = statusText;
+        statusElement.className = statusClass;
     }
 }
 
@@ -610,27 +793,71 @@ function loadYamlIntoEditor() {
  */
 function updateConfigStatus(statusText, statusClass) {
     const statusElement = document.getElementById('config-status');
-    statusElement.textContent = statusText;
-    statusElement.className = statusClass;
+    if (statusElement) {
+        statusElement.textContent = statusText;
+        statusElement.className = statusClass;
+    }
+}
+
+/**
+ * Reset settings to original state
+ */
+function resetSettings() {
+    document.getElementById('settings-yaml-editor').value = originalSettingsYaml;
+    updateSettingsStatus('Unchanged', 'badge bg-secondary');
+
+    // Clear the hidden settings_yaml field
+    document.getElementById('settings_yaml').value = '';
+    resetEditSettingsButtonState();
 }
 
 /**
  * Reset configuration to original state
  */
 function resetConfiguration() {
-    document.getElementById('yaml-editor').value = originalYamlConfig;
+    document.getElementById('config-yaml-editor').value = originalConfigYaml;
     updateConfigStatus('Unchanged', 'badge bg-secondary');
 
     // Clear the hidden config_yaml field
     document.getElementById('config_yaml').value = '';
-    resetEditButtonState();
+    resetEditConfigButtonState();
+}
+
+/**
+ * Save settings changes
+ */
+function saveSettings() {
+    const yamlContent = document.getElementById('settings-yaml-editor').value.trim();
+
+    if (!yamlContent) {
+        alert('Settings cannot be empty.');
+        return;
+    }
+
+    // Basic YAML validation
+    if (!validateYamlSettings(yamlContent)) {
+        return;
+    }
+
+    // Check if settings were actually modified
+    const isActuallyModified = yamlContent.trim() !== originalSettingsYaml.trim();
+
+    // Store the edited YAML
+    document.getElementById('settings_yaml').value = yamlContent;
+
+    // Update UI based on modification status
+    updateSettingsUI(isActuallyModified);
+
+    // Close the modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('settingsEditorModal'));
+    modal.hide();
 }
 
 /**
  * Save configuration changes
  */
 function saveConfiguration() {
-    const yamlContent = document.getElementById('yaml-editor').value.trim();
+    const yamlContent = document.getElementById('config-yaml-editor').value.trim();
 
     if (!yamlContent) {
         alert('Configuration cannot be empty.');
@@ -643,7 +870,7 @@ function saveConfiguration() {
     }
 
     // Check if configuration was actually modified
-    const isActuallyModified = yamlContent.trim() !== originalYamlConfig.trim();
+    const isActuallyModified = yamlContent.trim() !== originalConfigYaml.trim();
 
     // Store the edited YAML
     document.getElementById('config_yaml').value = yamlContent;
@@ -657,18 +884,52 @@ function saveConfiguration() {
 }
 
 /**
+ * Validate YAML settings content
+ */
+function validateYamlSettings(yamlContent) {
+    try {
+        // Basic validation - check for required sections
+        if (!yamlContent.includes('name:')) {
+            throw new Error('Settings must include name field');
+        }
+        return true;
+    } catch (error) {
+        alert('Invalid YAML settings: ' + error.message);
+        return false;
+    }
+}
+
+/**
  * Validate YAML configuration content
  */
 function validateYamlConfiguration(yamlContent) {
     try {
         // Basic validation - check for required sections
-        if (!yamlContent.includes('name:') || !yamlContent.includes('settings:')) {
-            throw new Error('Configuration must include name and settings sections');
+        if (!yamlContent.includes('name:')) {
+            throw new Error('Configuration must include name field');
         }
         return true;
     } catch (error) {
         alert('Invalid YAML configuration: ' + error.message);
         return false;
+    }
+}
+
+/**
+ * Update settings UI based on modification status
+ */
+function updateSettingsUI(isModified) {
+    const editButton = document.getElementById('edit-settings-btn');
+    
+    if (isModified) {
+        updateSettingsStatus('Modified', 'badge bg-warning');
+        editButton.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Customized';
+        editButton.classList.remove('btn-outline-secondary');
+        editButton.classList.add('btn-outline-warning');
+    } else {
+        updateSettingsStatus('Unchanged', 'badge bg-secondary');
+        document.getElementById('settings_yaml').value = '';
+        resetEditSettingsButtonState();
     }
 }
 
@@ -686,7 +947,7 @@ function updateConfigurationUI(isModified) {
     } else {
         updateConfigStatus('Unchanged', 'badge bg-secondary');
         document.getElementById('config_yaml').value = '';
-        resetEditButtonState();
+        resetEditConfigButtonState();
     }
 }
 

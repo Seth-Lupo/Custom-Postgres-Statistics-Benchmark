@@ -83,6 +83,91 @@ Created: 2024 (Refactored from original large template)
 
 </div>
 
+<!-- Settings Editor Modal -->
+<div class="modal fade" id="settingsEditorModal" tabindex="-1" aria-labelledby="settingsEditorModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="settingsEditorModalLabel">
+                    <i class="bi bi-sliders me-2"></i>
+                    Settings Editor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="settings-yaml-editor" class="form-label">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                YAML Settings
+                            </label>
+                            <textarea class="form-control" id="settings-yaml-editor" rows="20"
+                                style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;"></textarea>
+                            <div class="form-text">Edit the runtime settings in YAML format</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Settings Info
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <strong>Settings:</strong> <span id="settings-name">-</span>
+                                </div>
+                                <div class="mb-3">
+                                    <strong>Status:</strong> <span id="settings-status"
+                                        class="badge bg-secondary">Ready</span>
+                                </div>
+                                <div class="alert alert-info">
+                                    <small>
+                                        <i class="bi bi-lightbulb me-1"></i>
+                                        <strong>Tip:</strong> Settings control runtime behavior like timeouts and memory usage.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card mt-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-list-check me-1"></i>
+                                    Runtime Settings
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><code>analyze_verbose</code> - Enable verbose analyze output</li>
+                                    <li><code>analyze_timeout_seconds</code> - Timeout for operations</li>
+                                    <li><code>clear_caches</code> - Clear database caches</li>
+                                    <li><code>reset_counters</code> - Reset statistics counters</li>
+                                    <li><code>work_mem</code> - Memory for operations</li>
+                                    <li><code>maintenance_work_mem</code> - Memory for maintenance</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-primary" onclick="resetSettings()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>
+                    Reset to Original
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveSettings()">
+                    <i class="bi bi-check2 me-1"></i>
+                    Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Configuration Editor Modal -->
 <div class="modal fade" id="configEditorModal" tabindex="-1" aria-labelledby="configEditorModalLabel"
     aria-hidden="true">
@@ -99,13 +184,13 @@ Created: 2024 (Refactored from original large template)
                 <div class="row">
                     <div class="col-md-8">
                         <div class="mb-3">
-                            <label for="yaml-editor" class="form-label">
+                            <label for="config-yaml-editor" class="form-label">
                                 <i class="bi bi-file-earmark-code me-1"></i>
                                 YAML Configuration
                             </label>
-                            <textarea class="form-control" id="yaml-editor" rows="20"
+                            <textarea class="form-control" id="config-yaml-editor" rows="20"
                                 style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;"></textarea>
-                            <div class="form-text">Edit the configuration settings in YAML format</div>
+                            <div class="form-text">Edit the configuration data in YAML format</div>
                         </div>
                     </div>
                     <div class="col-md-4">
@@ -130,8 +215,7 @@ Created: 2024 (Refactored from original large template)
                                 <div class="alert alert-info">
                                     <small>
                                         <i class="bi bi-lightbulb me-1"></i>
-                                        <strong>Tip:</strong> Changes will be saved with your experiment and can be
-                                        viewed in the results.
+                                        <strong>Tip:</strong> Configuration data is passed to the statistics source for processing.
                                     </small>
                                 </div>
                             </div>
@@ -140,17 +224,14 @@ Created: 2024 (Refactored from original large template)
                             <div class="card-header">
                                 <h6 class="mb-0">
                                     <i class="bi bi-list-check me-1"></i>
-                                    Common Settings
+                                    Configuration Data
                                 </h6>
                             </div>
                             <div class="card-body">
                                 <ul class="list-unstyled mb-0 small">
-                                    <li><code>analyze_verbose</code> - Enable verbose analyze output</li>
-                                    <li><code>analyze_timeout_seconds</code> - Timeout for operations</li>
-                                    <li><code>clear_caches</code> - Clear database caches</li>
-                                    <li><code>work_mem</code> - Memory for operations</li>
-                                    <li><code>min_stats_value</code> - Min random stats (random only)</li>
-                                    <li><code>max_stats_value</code> - Max random stats (random only)</li>
+                                    <li><code>name</code> - Configuration name</li>
+                                    <li><code>description</code> - Configuration description</li>
+                                    <li><code>message</code> - Data message for stats source</li>
                                 </ul>
                             </div>
                         </div>

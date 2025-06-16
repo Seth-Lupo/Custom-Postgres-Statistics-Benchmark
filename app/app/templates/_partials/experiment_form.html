@@ -72,21 +72,44 @@ Created: 2024
         </div>
     </div>
     
-    <!-- Statistics Source and Configuration Row -->
+    <!-- Statistics Source Row -->
     <div class="row">
-        <div class="col-md-6 mb-3">
+        <div class="col-md-12 mb-3">
             <label for="stats_source" class="form-label">
                 <i class="bi bi-database me-1"></i>
                 Statistics Source
             </label>
             <select class="form-select" id="stats_source" name="stats_source" required
-                    onchange="loadConfigurations(this.value)">
+                    onchange="loadSettingsAndConfigurations(this.value)">
                 <option value="" disabled selected>Select a statistics source</option>
                 {% for key, name in src %}
                 <option value="{{ key }}">{{ name }}</option>
                 {% endfor %}
             </select>
             <div class="form-text">Choose the statistics source to use for query planning</div>
+        </div>
+    </div>
+    
+    <!-- Settings and Configuration Row -->
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="settings_name" class="form-label">
+                <i class="bi bi-sliders me-1"></i>
+                Runtime Settings
+            </label>
+            <div class="input-group">
+                <select class="form-select" id="settings_name" name="settings_name" disabled>
+                    <option value="" disabled selected>Select a statistics source first</option>
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="edit-settings-btn" disabled
+                        onclick="openSettingsEditor()">
+                    <i class="bi bi-pencil-square me-1"></i>
+                    Edit
+                </button>
+            </div>
+            <div class="form-text">Choose runtime settings (timeouts, memory, etc.)</div>
+            <!-- Hidden field to store the edited YAML settings -->
+            <input type="hidden" id="settings_yaml" name="settings_yaml" value="">
         </div>
         <div class="col-md-6 mb-3">
             <label for="config_name" class="form-label">
@@ -103,7 +126,7 @@ Created: 2024
                     Edit
                 </button>
             </div>
-            <div class="form-text">Choose the configuration for the selected statistics source</div>
+            <div class="form-text">Choose configuration for the selected statistics source</div>
             <!-- Hidden field to store the edited YAML configuration -->
             <input type="hidden" id="config_yaml" name="config_yaml" value="">
         </div>

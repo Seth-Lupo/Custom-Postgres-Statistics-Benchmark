@@ -30,8 +30,9 @@ experiment_runner = ExperimentRunner()
 experiment_status = {}
 
 
-def run_experiment_background(experiment_id: int, stats_source: str, config_name: str, 
-                            config_yaml: str, query: str, iterations: int, 
+def run_experiment_background(experiment_id: int, stats_source: str, 
+                            settings_name: str, settings_yaml: str,
+                            config_name: str, config_yaml: str, query: str, iterations: int, 
                             stats_reset_strategy: str, transaction_handling: str, 
                             dump_path: str, name: str) -> None:
     """
@@ -44,6 +45,8 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
     Args:
         experiment_id: Unique experiment tracking ID
         stats_source: Statistics source identifier
+        settings_name: Settings name (optional)
+        settings_yaml: Custom YAML settings (optional)
         config_name: Configuration name (optional)
         config_yaml: Custom YAML configuration (optional)
         query: SQL query to execute
@@ -95,6 +98,7 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         # Execute the experiment using the experiment runner
         web_logger.info(f"Running experiment {experiment_id} with parameters:")
         web_logger.info(f"  Stats source: {stats_source}")
+        web_logger.info(f"  Settings: {settings_name or 'default'}")
         web_logger.info(f"  Config: {config_name or 'default'}")
         web_logger.info(f"  Iterations: {iterations}")
         web_logger.info(f"  Strategy: {stats_reset_strategy}")
@@ -103,6 +107,8 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         experiment = experiment_runner.run_experiment(
             session=db,
             stats_source=stats_source,
+            settings_name=settings_name,
+            settings_yaml=settings_yaml,
             config_name=config_name,
             config_yaml=config_yaml,
             query=query,

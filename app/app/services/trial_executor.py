@@ -93,11 +93,11 @@ class TrialExecutor:
             stats_source_instance: Statistics source configuration
         """
         # Enhanced cache clearing if configured
-        if stats_source_instance.config.get_setting('clear_caches', True):
+        if stats_source_instance.settings.clear_caches:
             self._clear_database_caches(session)
             
         # Reset statistics counters if configured
-        if stats_source_instance.config.get_setting('reset_counters', True):
+        if stats_source_instance.settings.reset_counters:
             self._reset_statistics_counters(session)
             
     def _clear_database_caches(self, session: Session) -> None:

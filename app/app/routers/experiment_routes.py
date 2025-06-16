@@ -94,6 +94,8 @@ def submit_experiment(
     background_tasks: BackgroundTasks,
     experiment_name: str = Form(...),
     stats_source: str = Form(...),
+    settings_name: str = Form(None),
+    settings_yaml: str = Form(None),
     config_name: str = Form(None),
     config_yaml: str = Form(None),
     iterations: int = Form(...),
@@ -115,6 +117,8 @@ def submit_experiment(
         background_tasks: FastAPI background tasks manager
         experiment_name: User-provided experiment name
         stats_source: Selected statistics source
+        settings_name: Selected settings name (optional)
+        settings_yaml: Custom YAML settings (optional)
         config_name: Selected configuration name (optional)
         config_yaml: Custom YAML configuration (optional)
         iterations: Number of trial iterations
@@ -129,11 +133,14 @@ def submit_experiment(
     """
     try:
         # Log experiment submission details
+        settings_display = f"settings '{settings_name}'" if settings_name else "default settings"
         config_display = f"config '{config_name}'" if config_name else "default config"
-        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({config_display}), {iterations} iterations")
+        web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({settings_display}, {config_display}), {iterations} iterations")
         web_logger.info(f"Stats reset strategy: {stats_reset_strategy}, Transaction handling: {transaction_handling}")
         web_logger.info(f"Dump: {dump_file}, Query: {query_file}")
         
+        if settings_yaml:
+            web_logger.debug(f"Using custom settings: {settings_yaml[:200]}...")
         if config_yaml:
             web_logger.debug(f"Using custom configuration: {config_yaml[:200]}...")
 
@@ -194,7 +201,8 @@ def submit_experiment(
         # Launch experiment in background
         background_tasks.add_task(
             run_experiment_background, 
-            experiment_id, stats_source, config_name, config_yaml, query, 
+            experiment_id, stats_source, settings_name, settings_yaml,
+            config_name, config_yaml, query, 
             iterations, stats_reset_strategy, transaction_handling, 
             dump_path, experiment_name
         )

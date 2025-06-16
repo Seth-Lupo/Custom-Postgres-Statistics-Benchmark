@@ -7,7 +7,8 @@ been split into focused modules for better maintainability.
 
 Router Modules:
 - experiment_routes: Main experiment setup and submission
-- configuration_routes: Configuration management
+- configuration_routes: Configuration management (legacy)
+- settings_config_routes: Settings and configuration management (new)
 - streaming_routes: SSE streaming for real-time updates
 - background_tasks: Background experiment execution
 
@@ -19,6 +20,7 @@ from fastapi import APIRouter
 
 from .experiment_routes import router as experiment_router
 from .configuration_routes import router as config_router
+from .settings_config_routes import router as settings_config_router
 from .streaming_routes import router as streaming_router
 
 # Create main router that combines all sub-routers
@@ -26,7 +28,8 @@ router = APIRouter()
 
 # Include all specialized routers
 router.include_router(experiment_router, tags=["experiments"])
-router.include_router(config_router, tags=["configurations"])
+router.include_router(config_router, tags=["configurations"])  # Legacy support
+router.include_router(settings_config_router, tags=["settings-configs"])  # New structure
 router.include_router(streaming_router, tags=["streaming"])
 
 # Export the experiment status for backward compatibility

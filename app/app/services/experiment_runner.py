@@ -22,7 +22,7 @@ from sqlmodel import Session
 from datetime import datetime
 
 from ..models import Experiment, Trial
-from ..src.base import StatsSource, StatsSourceConfig
+from ..src.base import StatsSource, StatsSourceConfig, StatsSourceSettings
 from ..logging_config import experiment_logger, stats_logger, stats_source_logger
 from ..database import create_database, drop_database, load_dump, get_db_session
 
@@ -107,8 +107,9 @@ class ExperimentRunner:
         instance = source_class()
         return instance.get_available_configs()
     
-    def run_experiment(self, session: Session, stats_source: str, config_name: str, 
-                      config_yaml: str, query: str, iterations: int, 
+    def run_experiment(self, session: Session, stats_source: str, 
+                      settings_name: str, settings_yaml: str,
+                      config_name: str, config_yaml: str, query: str, iterations: int, 
                       stats_reset_strategy: str, transaction_handling: str, 
                       progress_callback: Callable[[str, int, int], None], 
                       dump_path: str, name: str) -> Experiment:
@@ -118,6 +119,8 @@ class ExperimentRunner:
         Args:
             session: Database session for storing results
             stats_source: Statistics source identifier
+            settings_name: Named settings (optional)
+            settings_yaml: Custom YAML settings (optional)
             config_name: Named configuration (optional)
             config_yaml: Custom YAML configuration (optional)
             query: SQL query to execute
@@ -154,22 +157,26 @@ class ExperimentRunner:
         experiment_logger.info(f"Starting experiment '{name}' with {stats_source} stats source")
         experiment_logger.debug(f"Query: {query}")
         experiment_logger.debug(f"Iterations: {iterations}")
+        experiment_logger.info(f"Settings: {settings_name or 'default'}")
+        experiment_logger.info(f"Config: {config_name or 'default'}")
         experiment_logger.info(f"Stats reset strategy: {stats_reset_strategy}")  
         experiment_logger.info(f"Transaction handling: {transaction_handling}")
         experiment_logger.info(f"Using temporary database: {db_name} from dump: {dump_path}")
         
-        # Setup statistics source and configuration
-        stats_source_instance, original_config_yaml, config_modified, config_modified_at = \
-            self._setup_stats_source_config(stats_source, config_name, config_yaml)
+        # Setup statistics source with both settings and configuration
+        stats_source_instance, original_settings_yaml, settings_modified, settings_modified_at, original_config_yaml, config_modified, config_modified_at = \
+            self._setup_stats_source_config(stats_source, settings_name, settings_yaml, config_name, config_yaml)
             
-        # Store the actual YAML configuration that will be used
+        # Store the actual YAML files that will be used
+        actual_settings_yaml = settings_yaml if settings_yaml else original_settings_yaml
         actual_config_yaml = config_yaml if config_yaml else original_config_yaml
         
         # Create experiment record
         experiment = self._create_experiment_record(
-            session, name, stats_source_instance, config_name, actual_config_yaml,  
-            original_config_yaml, config_modified, config_modified_at, query,
-            iterations, stats_reset_strategy, transaction_handling
+            session, name, stats_source_instance, 
+            settings_name, actual_settings_yaml, original_settings_yaml, settings_modified, settings_modified_at,
+            config_name, actual_config_yaml, original_config_yaml, config_modified, config_modified_at, 
+            query, iterations, stats_reset_strategy, transaction_handling
         )
         
         # Execute the experiment
@@ -189,27 +196,62 @@ class ExperimentRunner:
             self._handle_experiment_failure(session, experiment, e)
             raise
             
-    def _setup_stats_source_config(self, stats_source: str, config_name: str, 
-                                  config_yaml: str) -> Tuple[StatsSource, str, bool, datetime]:
+    def _setup_stats_source_config(self, stats_source: str, settings_name: str, settings_yaml: str,
+                                  config_name: str, config_yaml: str) -> Tuple[StatsSource, str, bool, datetime, str, bool, datetime]:
         """
-        Setup statistics source instance and configuration.
+        Setup statistics source instance with both settings and configuration.
         
         Returns:
-            Tuple of (stats_source_instance, original_config_yaml, config_modified, config_modified_at)
+            Tuple of (stats_source_instance, original_settings_yaml, settings_modified, settings_modified_at, original_config_yaml, config_modified, config_modified_at)
         """
+        import yaml
+        
         source_class = self.src[stats_source]
         
-        # Initialize configuration tracking variables
+        # Handle settings
+        settings = None
+        original_settings_yaml = None
+        settings_modified = False
+        settings_modified_at = None
+        
+        if settings_yaml:
+            # Use custom YAML settings provided by user
+            settings_data = yaml.safe_load(settings_yaml)
+            settings = StatsSourceSettings(settings_data)
+            experiment_logger.info(f"Using custom settings: {settings.name}")
+            
+            # Get original settings for comparison
+            effective_settings_name = settings_name or 'default'
+            original_settings_yaml = source_class().get_settings_content(effective_settings_name)
+            
+            # Check if settings were actually modified
+            if original_settings_yaml and settings_yaml.strip() != original_settings_yaml.strip():
+                settings_modified = True
+                settings_modified_at = datetime.utcnow()
+                experiment_logger.info("Settings were modified from original")
+            else:
+                experiment_logger.info("Settings unchanged from original")
+        elif settings_name:
+            # Use named settings
+            settings = source_class().load_settings(settings_name)
+            original_settings_yaml = source_class().get_settings_content(settings_name)
+            experiment_logger.info(f"Using named settings: {settings_name}")
+        else:
+            # Use default settings
+            settings = source_class()._load_default_settings()
+            original_settings_yaml = source_class().get_settings_content('default')
+            experiment_logger.info("Using default settings")
+        
+        # Handle configuration
+        config = None
         original_config_yaml = None
         config_modified = False
         config_modified_at = None
         
         if config_yaml:
             # Use custom YAML configuration provided by user
-            import yaml
             config_data = yaml.safe_load(config_yaml)
             config = StatsSourceConfig(config_data)
-            stats_source_instance = source_class(config)
             experiment_logger.info(f"Using custom configuration: {config.name}")
             
             # Get original configuration for comparison
@@ -227,17 +269,19 @@ class ExperimentRunner:
             # Use named or default configuration
             effective_config_name = config_name or 'default'
             config = source_class().load_config(effective_config_name)
-            stats_source_instance = source_class(config)
-            experiment_logger.info(f"Using named/default configuration: {effective_config_name}")
-            
-            # Get the original YAML for the named configuration
             original_config_yaml = source_class().get_config_content(effective_config_name)
-            
-        return stats_source_instance, original_config_yaml, config_modified, config_modified_at
+            experiment_logger.info(f"Using named/default configuration: {effective_config_name}")
+        
+        # Create stats source instance with both settings and config
+        stats_source_instance = source_class(settings=settings, config=config)
+        
+        return stats_source_instance, original_settings_yaml, settings_modified, settings_modified_at, original_config_yaml, config_modified, config_modified_at
         
     def _create_experiment_record(self, session: Session, name: str, 
-                                stats_source_instance: StatsSource, config_name: str,
-                                actual_config_yaml: str, original_config_yaml: str,
+                                stats_source_instance: StatsSource, settings_name: str,
+                                actual_settings_yaml: str, original_settings_yaml: str,
+                                settings_modified: bool, settings_modified_at: datetime,
+                                config_name: str, actual_config_yaml: str, original_config_yaml: str,
                                 config_modified: bool, config_modified_at: datetime,
                                 query: str, iterations: int, stats_reset_strategy: str,
                                 transaction_handling: str) -> Experiment:
@@ -248,6 +292,11 @@ class ExperimentRunner:
             experiment = Experiment(
                 name=name,
                 stats_source=stats_source_instance.display_name(),
+                settings_name=settings_name or 'default',
+                settings_yaml=actual_settings_yaml,
+                original_settings_yaml=original_settings_yaml,
+                settings_modified=settings_modified,
+                settings_modified_at=settings_modified_at,
                 config_name=config_name or 'default',
                 config_yaml=actual_config_yaml,
                 original_config_yaml=original_config_yaml,
@@ -322,24 +371,21 @@ class ExperimentRunner:
         
     def _configure_database_session(self, session: Session, stats_source_instance: StatsSource) -> None:
         """Configure database session parameters."""
-        # Set session parameters for consistent execution environment
-        timeout = stats_source_instance.config.get_setting('statement_timeout_ms', 0)
+        # Set session parameters for consistent execution environment using settings
+        # Use default timeout if not specified (0 means no timeout)
+        timeout = getattr(stats_source_instance.settings, 'analyze_timeout_seconds', 300) * 1000  # Convert to ms
         session.execute(text(f"SET statement_timeout = {timeout}"))
         
-        work_mem = stats_source_instance.config.get_setting('work_mem', '16MB')
+        work_mem = getattr(stats_source_instance.settings, 'work_mem', '16MB')
         session.execute(text(f"SET work_mem = '{work_mem}'"))
         
-        maint_work_mem = stats_source_instance.config.get_setting('maintenance_work_mem', '16MB')
+        maint_work_mem = getattr(stats_source_instance.settings, 'maintenance_work_mem', '16MB')
         session.execute(text(f"SET maintenance_work_mem = '{maint_work_mem}'"))
         
-        cache_size = stats_source_instance.config.get_setting('effective_cache_size', '1GB')
-        session.execute(text(f"SET effective_cache_size = '{cache_size}'"))
-        
-        random_cost = stats_source_instance.config.get_setting('random_page_cost', 1.0)
-        session.execute(text(f"SET random_page_cost = {random_cost}"))
-        
-        seq_cost = stats_source_instance.config.get_setting('seq_page_cost', 1.0)
-        session.execute(text(f"SET seq_page_cost = {seq_cost}"))
+        # Use default values for settings not in the settings object
+        session.execute(text("SET effective_cache_size = '1GB'"))
+        session.execute(text("SET random_page_cost = 1.0"))
+        session.execute(text("SET seq_page_cost = 1.0"))
         
         session.commit()
         
