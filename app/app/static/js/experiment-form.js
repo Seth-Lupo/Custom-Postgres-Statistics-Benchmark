@@ -3,7 +3,7 @@
  * 
  * This module handles all JavaScript functionality for the experiment 
  * configuration form, including dynamic configuration loading, YAML editing,
- * form validation, and progress tracking.
+ * form validation, and real-time experiment progress tracking via SSE.
  * 
  * Dependencies: Bootstrap 5, HTMX
  * 
@@ -17,6 +17,8 @@ let logHistory = [];
 let streamClosed = false;
 let originalYamlConfig = '';
 let currentStatsSource = '';
+let currentExperimentId = null;
+let eventSource = null;
 
 /**
  * Initialize experiment form functionality when DOM is loaded
@@ -25,7 +27,347 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeFormValidation();
     initializeConfigurationHandlers();
     checkInitialConfigState();
+    setupHTMXEventHandlers();
 });
+
+/**
+ * Set up HTMX event handlers for experiment progress
+ */
+function setupHTMXEventHandlers() {
+    console.log('Setting up HTMX event handlers...');
+    
+    // Listen for HTMX after swap events to initialize SSE connections
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        console.log('HTMX after swap event received:', event);
+        
+        // Check if the swapped content contains experiment progress
+        const experimentResult = event.detail.target.querySelector('#experiment-result');
+        if (experimentResult) {
+            console.log('Found experiment result in swapped content');
+            // Extract experiment ID from progress bar ID
+            const progressBar = experimentResult.querySelector('[id^="progress-bar-"]');
+            if (progressBar) {
+                const experimentId = progressBar.id.replace('progress-bar-', '');
+                currentExperimentId = parseInt(experimentId);
+                console.log('Starting SSE connection for experiment:', currentExperimentId);
+                initializeExperimentProgress(currentExperimentId);
+                
+                // Start pure JavaScript EventSource connection
+                startEventSourceConnection(currentExperimentId);
+            } else {
+                console.log('No progress bar found in experiment result');
+            }
+        } else {
+            console.log('No experiment result found in swapped content');
+        }
+    });
+    
+    console.log('HTMX event handlers setup complete');
+}
+
+/**
+ * Start EventSource connection for real-time experiment updates
+ * @param {number} experimentId - The experiment ID to track
+ */
+function startEventSourceConnection(experimentId) {
+    // Close any existing connection
+    if (eventSource) {
+        eventSource.close();
+    }
+    
+    const url = `/experiment/stream/${experimentId}`;
+    console.log('Opening EventSource connection to:', url);
+    
+    eventSource = new EventSource(url);
+    
+    eventSource.onopen = function(event) {
+        console.log('EventSource connection opened:', event);
+        addLogMessage('🔗 Real-time connection established', 'info');
+    };
+    
+    eventSource.onmessage = function(event) {
+        console.log('EventSource message received:', event.data);
+        try {
+            const data = JSON.parse(event.data);
+            console.log('Parsed EventSource data:', data);
+            handleSSEMessage(data);
+        } catch (error) {
+            console.error('Error parsing EventSource message:', error, 'Raw data:', event.data);
+        }
+    };
+    
+    eventSource.onerror = function(event) {
+        console.error('EventSource error:', event);
+        if (eventSource.readyState === EventSource.CLOSED) {
+            console.log('EventSource connection closed');
+            addLogMessage('🔌 Connection closed', 'info');
+        } else {
+            console.error('EventSource connection error');
+            addLogMessage('❌ Connection error', 'error');
+        }
+    };
+}
+
+/**
+ * Initialize experiment progress tracking for a specific experiment
+ * @param {number} experimentId - The experiment ID to track
+ */
+function initializeExperimentProgress(experimentId) {
+    currentExperimentId = experimentId;
+    logHistory = [];
+    streamClosed = false;
+    
+    // Initialize progress display
+    updateProgressBar(0, 0);
+    clearProgressLog();
+    
+    // Add initial status message
+    addLogMessage('⏳ Initializing experiment...', 'info');
+    
+    console.log(`Initialized progress tracking for experiment ${experimentId}`);
+}
+
+/**
+ * Handle incoming SSE messages
+ * @param {Object} data - Parsed SSE message data
+ */
+function handleSSEMessage(data) {
+    console.log('Received SSE message:', data);
+    
+    if (data.status === 'running') {
+        handleRunningStatus(data);
+    } else if (data.status === 'completed') {
+        handleCompletedStatus(data);
+    } else if (data.status === 'error') {
+        handleErrorStatus(data);
+    } else if (data.html) {
+        // Handle direct HTML updates
+        updateExperimentContainer(data.html);
+    }
+}
+
+/**
+ * Handle running status updates
+ * @param {Object} data - SSE message data
+ */
+function handleRunningStatus(data) {
+    // Update progress bar
+    if (data.progress !== undefined) {
+        updateProgressBar(data.progress, 100);
+    }
+    
+    // Add new messages to log
+    if (data.messages && Array.isArray(data.messages)) {
+        data.messages.forEach(message => {
+            addLogMessage(message, data.log_level || 'info');
+        });
+    }
+}
+
+/**
+ * Handle completed status
+ * @param {Object} data - SSE message data
+ */
+function handleCompletedStatus(data) {
+    streamClosed = true;
+    
+    // Update progress to 100%
+    updateProgressBar(100, 100);
+    
+    // Add completion message
+    addLogMessage('✅ Experiment completed successfully!', 'info');
+    
+    // Close EventSource connection
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        console.log('EventSource connection closed after completion');
+    }
+    
+    // Show completion HTML if provided
+    if (data.html) {
+        const experimentContainer = document.getElementById('experiment-container');
+        if (experimentContainer) {
+            // Append the completion message after the existing content
+            const completionDiv = document.createElement('div');
+            completionDiv.innerHTML = data.html;
+            experimentContainer.appendChild(completionDiv);
+        }
+    }
+    
+    console.log('Experiment completed successfully');
+}
+
+/**
+ * Handle error status
+ * @param {Object} data - SSE message data
+ */
+function handleErrorStatus(data) {
+    streamClosed = true;
+    
+    // Add error message to log
+    const errorMessage = data.error || 'Unknown error occurred';
+    addLogMessage(`❌ Error: ${errorMessage}`, 'error');
+    
+    // Close EventSource connection
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        console.log('EventSource connection closed after error');
+    }
+    
+    // Show error HTML if provided
+    if (data.html) {
+        const experimentContainer = document.getElementById('experiment-container');
+        if (experimentContainer) {
+            const errorDiv = document.createElement('div');
+            errorDiv.innerHTML = data.html;
+            experimentContainer.appendChild(errorDiv);
+        }
+    }
+    
+    console.error('Experiment failed:', errorMessage);
+}
+
+/**
+ * Update progress bar with current progress
+ * @param {number} current - Current progress value
+ * @param {number} total - Total progress value
+ */
+function updateProgressBar(current, total) {
+    if (!currentExperimentId) return;
+    
+    const progressBar = document.getElementById(`progress-bar-${currentExperimentId}`);
+    if (!progressBar) return;
+    
+    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+    
+    progressBar.style.width = `${percentage}%`;
+    progressBar.setAttribute('aria-valuenow', percentage.toString());
+    progressBar.textContent = `${percentage}%`;
+    
+    // Update progress bar color based on status
+    if (percentage === 100 && streamClosed) {
+        progressBar.classList.remove('bg-primary');
+        progressBar.classList.add('bg-success');
+    }
+}
+
+/**
+ * Add a message to the progress log
+ * @param {string} message - Log message to add
+ * @param {string} level - Log level (info, warning, error)
+ */
+function addLogMessage(message, level = 'info') {
+    if (!currentExperimentId) return;
+    
+    const logElement = document.getElementById(`progress-log-${currentExperimentId}`);
+    if (!logElement) return;
+    
+    // Store message in history
+    logHistory.push({ message, level, timestamp: new Date() });
+    
+    // Apply current log level filter
+    if (shouldShowLogLevel(level)) {
+        // Add message to display
+        const messageElement = document.createElement('div');
+        messageElement.className = `log-message log-${level}`;
+        messageElement.textContent = message;
+        
+        logElement.appendChild(messageElement);
+        
+        // Auto-scroll to bottom
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+}
+
+/**
+ * Check if a log level should be shown based on current filter
+ * @param {string} level - Log level to check
+ * @returns {boolean} - Whether the level should be shown
+ */
+function shouldShowLogLevel(level) {
+    switch (currentLogLevel) {
+        case 'error':
+            return level === 'error';
+        case 'warning':
+            return level === 'warning' || level === 'error';
+        case 'info':
+        default:
+            return true; // Show all levels
+    }
+}
+
+/**
+ * Clear the progress log display
+ */
+function clearProgressLog() {
+    if (!currentExperimentId) return;
+    
+    const logElement = document.getElementById(`progress-log-${currentExperimentId}`);
+    if (logElement) {
+        logElement.innerHTML = '';
+    }
+}
+
+/**
+ * Update experiment container with new HTML content
+ * @param {string} html - HTML content to update
+ */
+function updateExperimentContainer(html) {
+    const experimentContainer = document.getElementById('experiment-container');
+    if (experimentContainer) {
+        experimentContainer.innerHTML = html;
+    }
+}
+
+/**
+ * Set log level filter for progress display
+ * @param {string} level - Log level to filter by
+ * @param {HTMLElement} button - Button element that was clicked
+ */
+function setLogLevel(level, button) {
+    currentLogLevel = level;
+
+    // Update button states
+    button.parentElement.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active', 'btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    });
+    button.classList.remove('btn-outline-secondary');
+    button.classList.add('active', 'btn-secondary');
+
+    // Re-render log messages with new filter
+    filterLogMessages();
+}
+
+/**
+ * Filter log messages based on current log level
+ */
+function filterLogMessages() {
+    if (!currentExperimentId) return;
+    
+    const logElement = document.getElementById(`progress-log-${currentExperimentId}`);
+    if (!logElement) return;
+    
+    // Clear current display
+    logElement.innerHTML = '';
+    
+    // Re-add messages that match current filter
+    logHistory.forEach(({ message, level }) => {
+        if (shouldShowLogLevel(level)) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `log-message log-${level}`;
+            messageElement.textContent = message;
+            logElement.appendChild(messageElement);
+        }
+    });
+    
+    // Auto-scroll to bottom
+    logElement.scrollTop = logElement.scrollHeight;
+    
+    console.log(`Log level set to: ${currentLogLevel}`);
+}
 
 /**
  * Initialize Bootstrap form validation
@@ -349,30 +691,19 @@ function updateConfigurationUI(isModified) {
 }
 
 /**
- * Set log level filter for progress display
- * @param {string} level - Log level to filter by
- * @param {HTMLElement} button - Button element that was clicked
+ * Clean up EventSource connection
  */
-function setLogLevel(level, button) {
-    currentLogLevel = level;
-
-    // Update button states
-    button.parentElement.querySelectorAll('button').forEach(btn => {
-        btn.classList.remove('active', 'btn-secondary');
-        btn.classList.add('btn-outline-secondary');
-    });
-    button.classList.remove('btn-outline-secondary');
-    button.classList.add('active', 'btn-secondary');
-
-    // Filter existing log messages if any
-    filterLogMessages();
+function cleanupEventSource() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        console.log('EventSource connection cleaned up');
+    }
 }
 
 /**
- * Filter log messages based on current log level
+ * Handle page unload to clean up connections
  */
-function filterLogMessages() {
-    // This function can be extended to filter already displayed messages
-    // based on the current log level setting
-    console.log(`Log level set to: ${currentLogLevel}`);
-} 
+window.addEventListener('beforeunload', function() {
+    cleanupEventSource();
+}); 

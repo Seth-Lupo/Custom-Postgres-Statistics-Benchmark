@@ -176,4 +176,78 @@ Created: 2024 (Refactored from original large template)
 {% block scripts %}
 <!-- External JavaScript for experiment form functionality -->
 <script src="{{ url_for('static', path='/js/experiment-form.js') }}"></script>
+
+<!-- Debugging script for HTMX and EventSource -->
+<script>
+// Enable HTMX logging for debugging
+htmx.logAll();
+
+// Add extra debugging for EventSource issues
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, setting up debugging...');
+    
+    // Override console methods to also display in page for mobile debugging
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    function createDebugElement() {
+        const debugDiv = document.createElement('div');
+        debugDiv.id = 'debug-output';
+        debugDiv.style.cssText = `
+            position: fixed; 
+            bottom: 10px; 
+            right: 10px; 
+            width: 300px; 
+            max-height: 200px; 
+            overflow-y: auto; 
+            background: rgba(0,0,0,0.8); 
+            color: white; 
+            padding: 10px; 
+            font-size: 10px; 
+            font-family: monospace; 
+            border-radius: 5px; 
+            z-index: 9999;
+            display: none;
+        `;
+        document.body.appendChild(debugDiv);
+        return debugDiv;
+    }
+    
+    const debugDiv = createDebugElement();
+    
+    // Show/hide debug panel with Ctrl+D
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'd') {
+            e.preventDefault();
+            debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
+        }
+    });
+    
+    function addToDebug(message, type = 'log') {
+        const timestamp = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.style.color = type === 'error' ? '#ff6b6b' : '#4ecdc4';
+        entry.textContent = `[${timestamp}] ${message}`;
+        debugDiv.appendChild(entry);
+        debugDiv.scrollTop = debugDiv.scrollHeight;
+        
+        // Keep only last 50 entries
+        while (debugDiv.children.length > 50) {
+            debugDiv.removeChild(debugDiv.firstChild);
+        }
+    }
+    
+    console.log = function(...args) {
+        addToDebug(args.join(' '), 'log');
+        originalLog.apply(console, args);
+    };
+    
+    console.error = function(...args) {
+        addToDebug(args.join(' '), 'error');
+        originalError.apply(console, args);
+    };
+    
+    console.log('Debug panel initialized. Press Ctrl+D to toggle.');
+});
+</script>
 {% endblock %}

@@ -116,7 +116,7 @@ def _handle_running_experiment(status: dict) -> str:
         return None
         
     # Calculate progress percentage
-    progress_percent = int((status["progress"] / status["total"]) * 100)
+    progress_percent = int((status["progress"] / status["total"]) * 100) if status["total"] > 0 else 0
     
     # Determine log level from messages
     current_log_level = _determine_log_level(messages)
@@ -269,4 +269,19 @@ async def get_experiment_status(experiment_id: int):
         "name": status.get("name", "Unknown"),
         "has_messages": len(status["messages"]) > 0,
         "message_count": len(status["messages"])
+    }
+
+
+@router.get("/experiment/debug/status")
+async def debug_experiment_status():
+    """
+    Debug endpoint to see all current experiment statuses.
+    
+    Returns:
+        JSONResponse with all experiment statuses for debugging
+    """
+    return {
+        "experiments": experiment_status,
+        "count": len(experiment_status),
+        "experiment_ids": list(experiment_status.keys())
     } 

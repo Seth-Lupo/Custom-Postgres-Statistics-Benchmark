@@ -14,10 +14,12 @@ Created: 2024
 """
 
 import os
+import time
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import select, Session
+from datetime import datetime
 
 from ..database import get_db, SessionLocal
 from ..experiment import ExperimentRunner, ExperimentError
@@ -161,8 +163,21 @@ def submit_experiment(
         if isinstance(query, HTMLResponse):  # Error response
             return query
 
-        # Create experiment status entry for tracking
-        experiment_id = len(experiment_status) + 1
+        # Clean up old completed experiments (keep only running and recent completed ones)
+        current_time = time.time()
+        experiments_to_cleanup = []
+        for exp_id, status in experiment_status.items():
+            if (status["status"] in ["completed", "error"] and 
+                "created_at" in status and 
+                (current_time - status["created_at"].timestamp()) > 3600):  # 1 hour old
+                experiments_to_cleanup.append(exp_id)
+        
+        for exp_id in experiments_to_cleanup:
+            del experiment_status[exp_id]
+            web_logger.debug(f"Cleaned up old experiment {exp_id}")
+
+        # Create experiment status entry for tracking with unique timestamp-based ID
+        experiment_id = int(time.time() * 1000)  # Use millisecond timestamp for uniqueness
         experiment_status[experiment_id] = {
             "status": "running",
             "progress": 0,
@@ -170,7 +185,8 @@ def submit_experiment(
             "messages": [],
             "log_level": "info",
             "experiment": None,
-            "name": experiment_name
+            "name": experiment_name,
+            "created_at": datetime.utcnow()
         }
         
         web_logger.info(f"Created experiment tracking entry with ID {experiment_id}")
@@ -326,6 +342,45 @@ def _generate_experiment_progress_html(experiment_id: int, experiment_name: str,
         HTMLResponse with progress display
     """
     return HTMLResponse(f"""
+    <style>
+        .log-message {{
+            margin: 2px 0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.2;
+        }}
+        .log-info {{
+            color: #0d6efd;
+            background-color: rgba(13, 110, 253, 0.1);
+        }}
+        .log-warning {{
+            color: #f57c00;
+            background-color: rgba(245, 124, 0, 0.1);
+        }}
+        .log-error {{
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+            font-weight: 500;
+        }}
+        .progress-bar {{
+            transition: width 0.3s ease;
+        }}
+        #progress-log-{experiment_id} {{
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 12px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }}
+    </style>
     <div id="experiment-result">
         <div class="alert alert-info">
             <strong>Experiment Started!</strong> Running {iterations} iterations with {stats_source}...<br>
@@ -333,23 +388,30 @@ def _generate_experiment_progress_html(experiment_id: int, experiment_name: str,
             <span class="text-muted">Dump: {dump_file} | Query: {query_file}</span>
         </div>
         <div class="progress mb-3">
-            <div class="progress-bar" role="progressbar" style="width: 0%" id="progress-bar-{experiment_id}">0%</div>
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                 style="width: 0%" id="progress-bar-{experiment_id}" 
+                 aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
         </div>
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Experiment Progress</h5>
+                <h5 class="mb-0">
+                    <i class="bi bi-activity me-2"></i>
+                    Experiment Progress
+                </h5>
                 <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-secondary active" onclick="setLogLevel('info', this)">Info</button>
-                    <button type="button" class="btn btn-outline-warning" onclick="setLogLevel('warning', this)">Warnings</button>
-                    <button type="button" class="btn btn-outline-danger" onclick="setLogLevel('error', this)">Errors</button>
+                    <button type="button" class="btn btn-outline-secondary active" onclick="setLogLevel('info', this)">
+                        <i class="bi bi-info-circle me-1"></i>Info
+                    </button>
+                    <button type="button" class="btn btn-outline-warning" onclick="setLogLevel('warning', this)">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Warnings
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="setLogLevel('error', this)">
+                        <i class="bi bi-x-circle me-1"></i>Errors
+                    </button>
                 </div>
             </div>
-            <div class="card-body">
-                <pre id="progress-log-{experiment_id}" style="height: 300px; overflow-y: auto;" class="mb-0 bg-light p-3"></pre>
-            </div>
-        </div>
-        <div hx-sse="connect:/experiment/stream/{experiment_id}">
-            <div hx-sse="swap:message">
+            <div class="card-body p-0">
+                <div id="progress-log-{experiment_id}"></div>
             </div>
         </div>
     </div>

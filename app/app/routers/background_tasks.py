@@ -59,6 +59,11 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
     try:
         web_logger.info(f"Starting background execution for experiment {experiment_id}")
         
+        # Ensure experiment exists in status tracking
+        if experiment_id not in experiment_status:
+            web_logger.error(f"Experiment {experiment_id} not found in status tracking")
+            return
+        
         # Create progress callback function
         def progress_callback(message: str, current: int, total: int):
             """
@@ -72,6 +77,10 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
                 current: Current progress value  
                 total: Total progress value
             """
+            if experiment_id not in experiment_status:
+                web_logger.warning(f"Experiment {experiment_id} not found during progress update")
+                return
+                
             progress_percent = int((current / total) * 100) if total > 0 else 0
             status = experiment_status[experiment_id]
             status["progress"] = current
@@ -106,8 +115,9 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         )
         
         # Mark experiment as completed
-        experiment_status[experiment_id]["status"] = "completed"
-        experiment_status[experiment_id]["experiment"] = experiment
+        if experiment_id in experiment_status:
+            experiment_status[experiment_id]["status"] = "completed"
+            experiment_status[experiment_id]["experiment"] = experiment
         
         web_logger.info(f"Experiment {experiment_id} completed successfully")
         
@@ -116,12 +126,13 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         error_message = str(e)
         web_logger.error(f"Experiment {experiment_id} failed with ExperimentError: {error_message}")
         
-        experiment_status[experiment_id]["status"] = "error"
-        experiment_status[experiment_id]["error"] = error_message
-        
-        # Add error message to experiment logs
-        timestamped_error = f"[{datetime.utcnow().strftime('%H:%M:%S')}] ❌ Error: {error_message}"
-        experiment_status[experiment_id]["messages"].append(timestamped_error)
+        if experiment_id in experiment_status:
+            experiment_status[experiment_id]["status"] = "error"
+            experiment_status[experiment_id]["error"] = error_message
+            
+            # Add error message to experiment logs
+            timestamped_error = f"[{datetime.utcnow().strftime('%H:%M:%S')}] ❌ Error: {error_message}"
+            experiment_status[experiment_id]["messages"].append(timestamped_error)
         
     except Exception as e:
         # Handle unexpected errors
@@ -132,12 +143,13 @@ def run_experiment_background(experiment_id: int, stats_source: str, config_name
         web_logger.error(f"Experiment {experiment_id} failed with unexpected error: {error_message}")
         web_logger.debug(f"Traceback for experiment {experiment_id}:\n{tb}")
         
-        experiment_status[experiment_id]["status"] = "error"
-        experiment_status[experiment_id]["error"] = error_message
-        
-        # Add error message to experiment logs
-        timestamped_error = f"[{datetime.utcnow().strftime('%H:%M:%S')}] ❌ Unexpected error: {error_message}"
-        experiment_status[experiment_id]["messages"].append(timestamped_error)
+        if experiment_id in experiment_status:
+            experiment_status[experiment_id]["status"] = "error"
+            experiment_status[experiment_id]["error"] = error_message
+            
+            # Add error message to experiment logs
+            timestamped_error = f"[{datetime.utcnow().strftime('%H:%M:%S')}] ❌ Unexpected error: {error_message}"
+            experiment_status[experiment_id]["messages"].append(timestamped_error)
         
     finally:
         # Always close the database session
