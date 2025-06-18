@@ -132,22 +132,56 @@ Created: 2024 (Refactored from original large template)
                                 </div>
                             </div>
                         </div>
-                        <div class="card mt-3">
+                    </div>
+                </div>
+                
+                <!-- Settings Documentation - Below main editor -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
                             <div class="card-header">
                                 <h6 class="mb-0">
                                     <i class="bi bi-list-check me-1"></i>
-                                    Runtime Settings
+                                    Settings Reference
                                 </h6>
                             </div>
                             <div class="card-body">
-                                <ul class="list-unstyled mb-0 small">
-                                    <li><code>analyze_verbose</code> - Enable verbose analyze output</li>
-                                    <li><code>analyze_timeout_seconds</code> - Timeout for operations</li>
-                                    <li><code>clear_caches</code> - Clear database caches</li>
-                                    <li><code>reset_counters</code> - Reset statistics counters</li>
-                                    <li><code>work_mem</code> - Memory for operations</li>
-                                    <li><code>maintenance_work_mem</code> - Memory for maintenance</li>
-                                </ul>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <h6 class="text-primary mb-2"><i class="bi bi-sliders me-1"></i>Runtime Behavior</h6>
+                                        <ul class="list-unstyled mb-0 small">
+                                            <li class="mb-1"><code>analyze_verbose</code> <span class="text-muted">(default: true)</span><br>
+                                                Enable verbose output from PostgreSQL ANALYZE command</li>
+                                            <li class="mb-1"><code>analyze_timeout_seconds</code> <span class="text-muted">(default: 300)</span><br>
+                                                Timeout in seconds for database operations</li>
+                                            <li class="mb-1"><code>clear_caches</code> <span class="text-muted">(default: true)</span><br>
+                                                Clear PostgreSQL buffer caches before trials</li>
+                                            <li class="mb-1"><code>reset_counters</code> <span class="text-muted">(default: true)</span><br>
+                                                Reset PostgreSQL statistics counters before trials</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h6 class="text-success mb-2"><i class="bi bi-memory me-1"></i>Memory Settings</h6>
+                                        <ul class="list-unstyled mb-0 small">
+                                            <li class="mb-1"><code>work_mem</code> <span class="text-muted">(default: "16MB")</span><br>
+                                                Memory for sort operations and hash tables</li>
+                                            <li class="mb-1"><code>maintenance_work_mem</code> <span class="text-muted">(default: "16MB")</span><br>
+                                                Memory for maintenance operations like ANALYZE</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h6 class="text-warning mb-2"><i class="bi bi-gear me-1"></i>Experiment Strategies</h6>
+                                        <ul class="list-unstyled mb-0 small">
+                                            <li class="mb-1"><code>stats_reset_strategy</code> <span class="text-muted">(default: "once")</span><br>
+                                                <strong>"once":</strong> Apply statistics once before all trials<br>
+                                                <strong>"per_trial":</strong> Reset and apply statistics before each trial</li>
+                                            <li class="mb-1"><code>transaction_handling</code> <span class="text-muted">(default: "rollback")</span><br>
+                                                <strong>"rollback":</strong> Rollback query changes after each trial<br>
+                                                <strong>"persist":</strong> Allow persistent changes to test database</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                             
                             </div>
                         </div>
                     </div>
@@ -218,21 +252,6 @@ Created: 2024 (Refactored from original large template)
                                         <strong>Tip:</strong> Configuration data is passed to the statistics source for processing.
                                     </small>
                                 </div>
-                            </div>
-                        </div>
-                        <div class="card mt-3">
-                            <div class="card-header">
-                                <h6 class="mb-0">
-                                    <i class="bi bi-list-check me-1"></i>
-                                    Configuration Data
-                                </h6>
-                            </div>
-                            <div class="card-body">
-                                <ul class="list-unstyled mb-0 small">
-                                    <li><code>name</code> - Configuration name</li>
-                                    <li><code>description</code> - Configuration description</li>
-                                    <li><code>message</code> - Data message for stats source</li>
-                                </ul>
                             </div>
                         </div>
                     </div>

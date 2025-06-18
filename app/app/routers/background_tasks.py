@@ -33,7 +33,6 @@ experiment_status = {}
 def run_experiment_background(experiment_id: int, stats_source: str, 
                             settings_name: str, settings_yaml: str,
                             config_name: str, config_yaml: str, query: str, iterations: int, 
-                            stats_reset_strategy: str, transaction_handling: str, 
                             dump_path: str, name: str) -> None:
     """
     Execute an experiment in the background.
@@ -41,6 +40,9 @@ def run_experiment_background(experiment_id: int, stats_source: str,
     This function runs an experiment asynchronously and updates the global
     experiment_status dictionary with progress information. It handles all
     experiment execution phases and error management.
+    
+    Note: Statistics reset strategy and transaction handling are now read
+    from the settings YAML configuration, not passed as parameters.
     
     Args:
         experiment_id: Unique experiment tracking ID
@@ -51,8 +53,6 @@ def run_experiment_background(experiment_id: int, stats_source: str,
         config_yaml: Custom YAML configuration (optional)
         query: SQL query to execute
         iterations: Number of trial iterations
-        stats_reset_strategy: Statistics reset strategy
-        transaction_handling: Transaction handling mode
         dump_path: Path to database dump file
         name: Experiment name
     """
@@ -124,8 +124,6 @@ def run_experiment_background(experiment_id: int, stats_source: str,
         web_logger.info(f"  Settings: {settings_name or 'default'}")
         web_logger.info(f"  Config: {config_name or 'default'}")
         web_logger.info(f"  Iterations: {iterations}")
-        web_logger.info(f"  Strategy: {stats_reset_strategy}")
-        web_logger.info(f"  Transaction: {transaction_handling}")
         
         experiment = experiment_runner.run_experiment(
             session=db,
@@ -136,8 +134,6 @@ def run_experiment_background(experiment_id: int, stats_source: str,
             config_yaml=config_yaml,
             query=query,
             iterations=iterations,
-            stats_reset_strategy=stats_reset_strategy,
-            transaction_handling=transaction_handling,
             dump_path=dump_path,
             progress_callback=progress_callback,
             name=name

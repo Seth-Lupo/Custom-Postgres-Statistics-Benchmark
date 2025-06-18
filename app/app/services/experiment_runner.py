@@ -110,11 +110,13 @@ class ExperimentRunner:
     def run_experiment(self, session: Session, stats_source: str, 
                       settings_name: str, settings_yaml: str,
                       config_name: str, config_yaml: str, query: str, iterations: int, 
-                      stats_reset_strategy: str, transaction_handling: str, 
                       progress_callback: Callable[[str, int, int], None], 
                       dump_path: str, name: str) -> Experiment:
         """
         Run a complete experiment and return the result.
+        
+        Note: Statistics reset strategy and transaction handling are now read
+        from the settings YAML configuration, not passed as parameters.
         
         Args:
             session: Database session for storing results
@@ -125,8 +127,6 @@ class ExperimentRunner:
             config_yaml: Custom YAML configuration (optional)
             query: SQL query to execute
             iterations: Number of trial iterations
-            stats_reset_strategy: Statistics reset strategy ('once' or 'per_trial')
-            transaction_handling: Transaction handling ('rollback' or 'persist')
             progress_callback: Callback function for progress updates
             dump_path: Path to database dump file
             name: Experiment name
@@ -144,6 +144,15 @@ class ExperimentRunner:
         self.progress_tracker.clear_logs()
         self.progress_tracker.set_progress_callback(progress_callback)
         
+        # Setup statistics source with both settings and configuration first
+        # to get the strategy values from settings
+        stats_source_instance, original_settings_yaml, settings_modified, settings_modified_at, original_config_yaml, config_modified, config_modified_at = \
+            self._setup_stats_source_config(stats_source, settings_name, settings_yaml, config_name, config_yaml)
+            
+        # Get strategy values from settings
+        stats_reset_strategy = stats_source_instance.settings.stats_reset_strategy
+        transaction_handling = stats_source_instance.settings.transaction_handling
+        
         # Validate all parameters before starting
         try:
             self.validator.validate_experiment_parameters(
@@ -159,13 +168,9 @@ class ExperimentRunner:
         experiment_logger.debug(f"Iterations: {iterations}")
         experiment_logger.info(f"Settings: {settings_name or 'default'}")
         experiment_logger.info(f"Config: {config_name or 'default'}")
-        experiment_logger.info(f"Stats reset strategy: {stats_reset_strategy}")  
-        experiment_logger.info(f"Transaction handling: {transaction_handling}")
+        experiment_logger.info(f"Stats reset strategy: {stats_reset_strategy} (from settings)")  
+        experiment_logger.info(f"Transaction handling: {transaction_handling} (from settings)")
         experiment_logger.info(f"Using temporary database: {db_name} from dump: {dump_path}")
-        
-        # Setup statistics source with both settings and configuration
-        stats_source_instance, original_settings_yaml, settings_modified, settings_modified_at, original_config_yaml, config_modified, config_modified_at = \
-            self._setup_stats_source_config(stats_source, settings_name, settings_yaml, config_name, config_yaml)
             
         # Store the actual YAML files that will be used
         actual_settings_yaml = settings_yaml if settings_yaml else original_settings_yaml

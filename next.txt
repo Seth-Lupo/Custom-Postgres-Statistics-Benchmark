@@ -1,0 +1,2 @@
+please make sure the diffing is visible for both settings and config. 
+Make sure that the two things in ui just become settings. 

@@ -20,6 +20,8 @@ class StatsSourceSettings:
         self.reset_counters = settings_data.get('reset_counters', True)
         self.work_mem = settings_data.get('work_mem', '16MB')
         self.maintenance_work_mem = settings_data.get('maintenance_work_mem', '16MB')
+        self.stats_reset_strategy = settings_data.get('stats_reset_strategy', 'once')
+        self.transaction_handling = settings_data.get('transaction_handling', 'rollback')
 
 
 class StatsSourceConfig:
@@ -86,6 +88,8 @@ class StatsSource(ABC):
             'reset_counters': legacy_config.get_setting('reset_counters', True),
             'work_mem': legacy_config.get_setting('work_mem', '16MB'),
             'maintenance_work_mem': legacy_config.get_setting('maintenance_work_mem', '16MB'),
+            'stats_reset_strategy': legacy_config.get_setting('stats_reset_strategy', 'once'),
+            'transaction_handling': legacy_config.get_setting('transaction_handling', 'rollback'),
         }
         return StatsSourceSettings(settings_data)
     

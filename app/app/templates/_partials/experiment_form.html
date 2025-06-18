@@ -17,9 +17,9 @@ Created: 2024
 <form hx-post="/experiment" hx-target="#experiment-container" hx-indicator="#submit-spinner"
       hx-swap="innerHTML show:top" class="needs-validation" id="experiment-form" novalidate>
     
-    <!-- Experiment Name and Iterations Row -->
+    <!-- Experiment Name Row -->
     <div class="row">
-        <div class="col-9 mb-3">
+        <div class="col-12 mb-3">
             <label for="experiment_name" class="form-label">
                 <i class="bi bi-tag me-1"></i>
                 Experiment Name
@@ -27,6 +27,24 @@ Created: 2024
             <input type="text" class="form-control" id="experiment_name" name="experiment_name"
                    placeholder="Enter a descriptive name for this experiment" required>
             <div class="form-text">Give your experiment a unique, descriptive name</div>
+        </div>
+    </div>
+    
+    <!-- Statistics Source and Iterations Row -->
+    <div class="row">
+        <div class="col-md-9 mb-3">
+            <label for="stats_source" class="form-label">
+                <i class="bi bi-database me-1"></i>
+                Statistics Source
+            </label>
+            <select class="form-select" id="stats_source" name="stats_source" required
+                    onchange="loadSettingsAndConfigurations(this.value)">
+                <option value="" disabled selected>Select a statistics source</option>
+                {% for key, name in src %}
+                <option value="{{ key }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+            <div class="form-text">Choose the statistics source to use for query planning</div>
         </div>
         <div class="col-md-3 mb-3">
             <label for="iterations" class="form-label">
@@ -72,24 +90,6 @@ Created: 2024
         </div>
     </div>
     
-    <!-- Statistics Source Row -->
-    <div class="row">
-        <div class="col-md-12 mb-3">
-            <label for="stats_source" class="form-label">
-                <i class="bi bi-database me-1"></i>
-                Statistics Source
-            </label>
-            <select class="form-select" id="stats_source" name="stats_source" required
-                    onchange="loadSettingsAndConfigurations(this.value)">
-                <option value="" disabled selected>Select a statistics source</option>
-                {% for key, name in src %}
-                <option value="{{ key }}">{{ name }}</option>
-                {% endfor %}
-            </select>
-            <div class="form-text">Choose the statistics source to use for query planning</div>
-        </div>
-    </div>
-    
     <!-- Settings and Configuration Row -->
     <div class="row">
         <div class="col-md-6 mb-3">
@@ -107,7 +107,7 @@ Created: 2024
                     Edit
                 </button>
             </div>
-            <div class="form-text">Choose runtime settings (timeouts, memory, etc.)</div>
+            <div class="form-text">Choose runtime settings (timeouts, memory, statistics reset strategy, etc.)</div>
             <!-- Hidden field to store the edited YAML settings -->
             <input type="hidden" id="settings_yaml" name="settings_yaml" value="">
         </div>
@@ -129,32 +129,6 @@ Created: 2024
             <div class="form-text">Choose configuration for the selected statistics source</div>
             <!-- Hidden field to store the edited YAML configuration -->
             <input type="hidden" id="config_yaml" name="config_yaml" value="">
-        </div>
-    </div>
-    
-    <!-- Strategy Configuration Row -->
-    <div class="row">
-        <div class="col-md-6 mb-3">
-            <label for="stats_reset_strategy" class="form-label">
-                <i class="bi bi-bootstrap-reboot me-1"></i>
-                Statistics Reset Strategy
-            </label>
-            <select class="form-select" id="stats_reset_strategy" name="stats_reset_strategy" required>
-                <option value="once" selected>Apply statistics once before all trials</option>
-                <option value="per_trial">Reset and apply statistics before each trial</option>
-            </select>
-            <div class="form-text">Choose when to apply/reset database statistics</div>
-        </div>
-        <div class="col-md-6 mb-3">
-            <label for="transaction_handling" class="form-label">
-                <i class="bi bi-database-exclamation me-1"></i>
-                Transaction Handling
-            </label>
-            <select class="form-select" id="transaction_handling" name="transaction_handling" required>
-                <option value="rollback" selected>Rollback changes after each trial</option>
-                <option value="persist">Allow persistent changes to test database</option>
-            </select>
-            <div class="form-text">Choose how to handle query changes to the database</div>
         </div>
     </div>
 

@@ -99,8 +99,6 @@ def submit_experiment(
     config_name: str = Form(None),
     config_yaml: str = Form(None),
     iterations: int = Form(...),
-    stats_reset_strategy: str = Form(...),
-    transaction_handling: str = Form(...),
     dump_file: str = Form(...),
     query_file: str = Form(...),
     db: Session = Depends(get_db)
@@ -112,6 +110,9 @@ def submit_experiment(
     parameters, checks for name conflicts, and launches the experiment
     in the background.
     
+    Note: Statistics reset strategy and transaction handling are now configured
+    through the settings YAML files, not as form parameters.
+    
     Args:
         request: FastAPI request object
         background_tasks: FastAPI background tasks manager
@@ -122,8 +123,6 @@ def submit_experiment(
         config_name: Selected configuration name (optional)
         config_yaml: Custom YAML configuration (optional)
         iterations: Number of trial iterations
-        stats_reset_strategy: Statistics reset strategy ('once' or 'per_trial')
-        transaction_handling: Transaction handling ('rollback' or 'persist')
         dump_file: Selected database dump file
         query_file: Selected query file
         db: Database session dependency
@@ -136,7 +135,6 @@ def submit_experiment(
         settings_display = f"settings '{settings_name}'" if settings_name else "default settings"
         config_display = f"config '{config_name}'" if config_name else "default config"
         web_logger.info(f"Starting experiment '{experiment_name}' with {stats_source} source ({settings_display}, {config_display}), {iterations} iterations")
-        web_logger.info(f"Stats reset strategy: {stats_reset_strategy}, Transaction handling: {transaction_handling}")
         web_logger.info(f"Dump: {dump_file}, Query: {query_file}")
         
         if settings_yaml:
@@ -203,14 +201,13 @@ def submit_experiment(
             run_experiment_background, 
             experiment_id, stats_source, settings_name, settings_yaml,
             config_name, config_yaml, query, 
-            iterations, stats_reset_strategy, transaction_handling, 
-            dump_path, experiment_name
+            iterations, dump_path, experiment_name
         )
         
         # Return progress display HTML
         return _generate_experiment_progress_html(
             experiment_id, experiment_name, iterations, stats_source, 
-            stats_reset_strategy, transaction_handling, dump_file, query_file
+            dump_file, query_file
         )
         
     except Exception as e:
@@ -331,7 +328,6 @@ def _read_and_validate_query(query_path: str, query_file: str):
 
 def _generate_experiment_progress_html(experiment_id: int, experiment_name: str, 
                                      iterations: int, stats_source: str,
-                                     stats_reset_strategy: str, transaction_handling: str,
                                      dump_file: str, query_file: str) -> HTMLResponse:
     """
     Generate HTML for experiment progress display.
@@ -341,8 +337,6 @@ def _generate_experiment_progress_html(experiment_id: int, experiment_name: str,
         experiment_name: User-provided experiment name
         iterations: Number of iterations
         stats_source: Statistics source name
-        stats_reset_strategy: Statistics reset strategy
-        transaction_handling: Transaction handling mode
         dump_file: Dump filename
         query_file: Query filename
         
@@ -392,8 +386,7 @@ def _generate_experiment_progress_html(experiment_id: int, experiment_name: str,
     <div id="experiment-result">
         <div class="alert alert-info">
             <strong>Experiment Started!</strong> Running {iterations} iterations with {stats_source}...<br>
-            <span class="text-muted">Name: {experiment_name} | Stats: {stats_reset_strategy} | Transaction: {transaction_handling}</span><br>
-            <span class="text-muted">Dump: {dump_file} | Query: {query_file}</span>
+            <span class="text-muted">Name: {experiment_name} | Dump: {dump_file} | Query: {query_file}</span>
         </div>
         <div class="progress mb-3">
             <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 

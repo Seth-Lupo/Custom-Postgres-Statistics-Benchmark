@@ -5,4 +5,6 @@ analyze_timeout_seconds: 60
 clear_caches: false
 reset_counters: false
 work_mem: "8MB"
-maintenance_work_mem: "8MB" 
+maintenance_work_mem: "8MB"
+stats_reset_strategy: "per_trial"
+transaction_handling: "persist" 
