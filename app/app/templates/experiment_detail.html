@@ -106,63 +106,7 @@
         </div>
     </div>
 
-    <!-- Experiment Behavior Configuration -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-6">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="rounded-circle bg-purple bg-opacity-10 p-3 me-3" style="background-color: rgba(102, 16, 242, 0.1) !important;">
-                            <i class="bi bi-bootstrap-reboot" style="color: #6610f2;"></i>
-                        </div>
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Statistics Reset Strategy</h6>
-                            <h5 class="card-title mb-0">
-                                {% if experiment.stats_reset_strategy == 'once' %}
-                                <span class="badge bg-info">
-                                    <i class="bi bi-arrow-down-circle me-1"></i>
-                                    Once Before All Trials
-                                </span>
-                                {% else %}
-                                <span class="badge bg-warning">
-                                    <i class="bi bi-arrow-repeat me-1"></i>
-                                    Reset Per Trial
-                                </span>
-                                {% endif %}
-                            </h5>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="rounded-circle bg-teal bg-opacity-10 p-3 me-3" style="background-color: rgba(13, 202, 240, 0.1) !important;">
-                            <i class="bi bi-database-exclamation" style="color: #0dcaf0;"></i>
-                        </div>
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Transaction Handling</h6>
-                            <h5 class="card-title mb-0">
-                                {% if experiment.transaction_handling == 'rollback' %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>
-                                    Rollback Changes
-                                </span>
-                                {% else %}
-                                <span class="badge bg-warning">
-                                    <i class="bi bi-save me-1"></i>
-                                    Persist Changes
-                                </span>
-                                {% endif %}
-                            </h5>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+ 
 
     <!-- Exit Status and Additional Stats -->
     <div class="row g-4 mb-4">
@@ -214,6 +158,66 @@
         </div>
     </div>
 
+    {% if experiment.settings_name or experiment.settings_yaml %}
+    <!-- Settings Section -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-sliders me-2 text-primary"></i>
+                    <h5 class="card-title mb-0">Settings Details</h5>
+                </div>
+                <button type="button" class="btn btn-outline-primary" onclick="showSettingsModal()">
+                    <i class="bi bi-eye me-1"></i>
+                    View Settings
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-9">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Settings Name</label>
+                        <div class="p-2 bg-light rounded">
+                            <span class="badge bg-primary me-2">{{ experiment.settings_name or 'default' }}</span>
+                            <span class="text-muted">{{ experiment.stats_source }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Settings Type</label>
+                        <div class="p-2 bg-light rounded">
+                            {% if experiment.settings_yaml and not experiment.settings_modified %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    Unchanged
+                                </span>
+                            {% elif experiment.settings_yaml and experiment.settings_modified %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-pencil-square me-1"></i>
+                                    Modified
+                                </span>
+                            {% elif experiment.settings_yaml %}
+                                <span class="badge bg-info">
+                                    <i class="bi bi-file-earmark-code me-1"></i>
+                                    Custom
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-sliders me-1"></i>
+                                    Default
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    {% endif %}
+
     {% if experiment.config_name or experiment.config_yaml %}
     <!-- Configuration Section -->
     <div class="card shadow-sm mb-4">
@@ -231,7 +235,7 @@
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-md-9">
                     <div class="mb-3">
                         <label class="form-label small text-muted">Configuration Name</label>
                         <div class="p-2 bg-light rounded">
@@ -240,7 +244,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <div class="mb-3">
                         <label class="form-label small text-muted">Configuration Type</label>
                         <div class="p-2 bg-light rounded">
@@ -269,18 +273,6 @@
                     </div>
                 </div>
             </div>
-            
-            {% if experiment.config_modified and experiment.config_modified_at %}
-            <div class="row">
-                <div class="col-12">
-                    <div class="alert alert-warning">
-                        <i class="bi bi-info-circle me-2"></i>
-                        <strong>Configuration Modified:</strong> This experiment used a modified configuration.
-                        <br><small class="text-muted">Modified at: {{ experiment.config_modified_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -696,6 +688,156 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     {% if experiment.config_yaml %}
                     <button type="button" class="btn btn-primary" onclick="downloadConfiguration()">
+                        <i class="bi bi-download me-1"></i>
+                        Download YAML
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="settingsModalLabel">
+                        <i class="bi bi-sliders me-2"></i>
+                        Settings Details - {{ experiment.name }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if experiment.original_settings_yaml and experiment.settings_yaml and experiment.settings_modified %}
+                    <!-- Show all three buttons when settings was modified -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-warning me-2">
+                                <i class="bi bi-pencil-square me-1"></i>
+                                Settings Modified
+                            </span>
+                            <small class="text-muted">Choose view to compare changes</small>
+                        </div>
+                        <div class="btn-group" role="group" aria-label="Settings view options">
+                            <button class="btn btn-sm btn-outline-secondary active" type="button" onclick="showSettingsView('original', this)">
+                                <i class="bi bi-file-text me-1"></i>
+                                Original
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" onclick="showSettingsView('current', this)">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                Modified
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" type="button" onclick="showSettingsView('diff', this)">
+                                <i class="bi bi-file-diff me-1"></i>
+                                Diff
+                            </button>
+                        </div>
+                    </div>
+                    {% elif experiment.settings_yaml %}
+                    <!-- Show single settings view when not modified -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            {% if experiment.original_settings_yaml %}
+                            <span class="badge bg-success me-2">
+                                <i class="bi bi-check-circle me-1"></i>
+                                Settings Unchanged
+                            </span>
+                            <small class="text-muted">Original settings were used without modifications</small>
+                            {% else %}
+                            <span class="badge bg-info me-2">
+                                <i class="bi bi-file-earmark-code me-1"></i>
+                                Custom Settings
+                            </span>
+                            <small class="text-muted">Experiment used custom settings</small>
+                            {% endif %}
+                        </div>
+                       
+                    </div>
+                    {% endif %}
+                    
+                    <div class="settings-view-container">
+                        {% if experiment.original_settings_yaml and experiment.settings_yaml and experiment.settings_modified %}
+                        <!-- Original Settings View -->
+                        <div id="originalSettingsView" class="settings-view active">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-text me-1"></i>
+                                        Original Settings
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.original_settings_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current/Modified Settings View -->
+                        <div id="currentSettingsView" class="settings-view" style="display: none;">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-earmark-code me-1"></i>
+                                        Modified Settings
+                                        <span class="badge bg-warning ms-2">Modified</span>
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.settings_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Diff View -->
+                        <div id="diffSettingsView" class="settings-view" style="display: none;">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-diff me-1"></i>
+                                        Settings Changes
+                                        <small class="text-muted ms-2">(+ additions, - deletions)</small>
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="diffSettingsContent" class="diff-container">
+                                        <div class="text-center py-3">
+                                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                <span class="visually-hidden">Generating diff...</span>
+                                            </div>
+                                            <p class="text-muted mt-2 mb-0">Generating diff view...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% elif experiment.settings_yaml %}
+                        <!-- Single Settings View -->
+                        <div id="singleSettingsView" class="settings-view active">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-earmark-code me-1"></i>
+                                        Settings
+                                        {% if experiment.original_settings_yaml %}
+                                        <span class="badge bg-success ms-2">Unchanged</span>
+                                        {% else %}
+                                        <span class="badge bg-info ms-2">Custom</span>
+                                        {% endif %}
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="bg-light p-3 rounded small"><code class="language-yaml">{{ experiment.settings_yaml }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    {% if experiment.settings_yaml %}
+                    <button type="button" class="btn btn-primary" onclick="downloadSettings()">
                         <i class="bi bi-download me-1"></i>
                         Download YAML
                     </button>
@@ -1184,6 +1326,155 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// Settings View Functions
+function showSettingsModal() {
+    const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    modal.show();
+}
+
+function showSettingsView(viewType, button) {
+    // Update button states - reset all buttons to their default outline state
+    const buttons = button.parentElement.querySelectorAll('button');
+    buttons.forEach((btn, index) => {
+        // Remove all possible button classes
+        btn.classList.remove('active', 'btn-secondary', 'btn-primary', 'btn-warning', 
+                           'btn-outline-secondary', 'btn-outline-primary', 'btn-outline-warning');
+        
+        // Set each button back to its default outline state based on its position
+        if (index === 0) { // Original button
+            btn.classList.add('btn-outline-secondary');
+        } else if (index === 1) { // Modified button
+            btn.classList.add('btn-outline-primary');
+        } else if (index === 2) { // Diff button
+            btn.classList.add('btn-outline-warning');
+        }
+    });
+    
+    // Set the clicked button to active state
+    button.classList.remove('btn-outline-secondary', 'btn-outline-primary', 'btn-outline-warning');
+    if (viewType === 'original') {
+        button.classList.add('active', 'btn-secondary');
+    } else if (viewType === 'current') {
+        button.classList.add('active', 'btn-primary');
+    } else if (viewType === 'diff') {
+        button.classList.add('active', 'btn-warning');
+    }
+    
+    // Hide all views
+    const views = document.querySelectorAll('.settings-view');
+    views.forEach(view => {
+        view.style.display = 'none';
+        view.classList.remove('active');
+    });
+    
+    // Show selected view
+    const targetView = document.getElementById(viewType + 'SettingsView');
+    if (targetView) {
+        targetView.style.display = 'block';
+        targetView.classList.add('active');
+        
+        // Generate diff if diff view is selected
+        if (viewType === 'diff') {
+            generateSettingsDiff();
+        }
+    }
+}
+
+function generateSettingsDiff() {
+    const diffContent = document.getElementById('diffSettingsContent');
+    
+    // Extract YAML content directly from the server-side template variables
+    // Use hidden elements to store the raw content to avoid escaping issues
+    let originalSettings = '';
+    let currentSettings = '';
+    
+    // Try to get the content from the displayed views first
+    const originalView = document.querySelector('#originalSettingsView pre code');
+    const currentView = document.querySelector('#currentSettingsView pre code');
+    
+    if (originalView && currentView) {
+        originalSettings = originalView.textContent.trim();
+        currentSettings = currentView.textContent.trim();
+    } else {
+        // Fallback to template data (with potential escaping issues)
+        originalSettings = `{{ experiment.original_settings_yaml|safe }}`.trim();
+        currentSettings = `{{ experiment.settings_yaml|safe }}`.trim();
+    }
+    
+    if (!originalSettings || !currentSettings) {
+        diffContent.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Unable to generate diff: Missing settings data
+            </div>
+        `;
+        return;
+    }
+    
+    if (originalSettings === currentSettings) {
+        diffContent.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                No differences found: The settings are identical
+            </div>
+        `;
+        return;
+    }
+    
+    try {
+        // Simple line-by-line diff
+        const originalLines = originalSettings.split('\n');
+        const currentLines = currentSettings.split('\n');
+        
+        const diffHtml = generateSimpleDiff(originalLines, currentLines);
+        diffContent.innerHTML = diffHtml;
+    } catch (error) {
+        console.error('Error generating diff:', error);
+        diffContent.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Error generating diff: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function downloadSettings() {
+    const activeView = document.querySelector('.settings-view.active');
+    if (!activeView) {
+        alert('No settings to download');
+        return;
+    }
+    
+    const settingsContent = activeView.querySelector('pre code').textContent;
+    const experimentName = '{{ experiment.name }}';
+    const experimentId = '{{ experiment.id }}';
+    
+    // Determine filename based on active view
+    let filename = `experiment_${experimentId}_settings.yaml`;
+    if (activeView.id === 'originalSettingsView') {
+        filename = `experiment_${experimentId}_original_settings.yaml`;
+    } else if (activeView.id === 'currentSettingsView') {
+        filename = `experiment_${experimentId}_modified_settings.yaml`;
+    }
+    
+    // Create and download file
+    const blob = new Blob([settingsContent], { type: 'text/yaml;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 </script>
 
 <style>
@@ -1347,18 +1638,18 @@ code {
     background: #868e96;
 }
 
-/* Configuration View Styles */
-.config-view-container {
+/* Configuration and Settings View Styles */
+.config-view-container, .settings-view-container {
     position: relative;
     min-height: 300px;
 }
 
-.config-view {
+.config-view, .settings-view {
     width: 100%;
     transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-.config-view:not(.active) {
+.config-view:not(.active), .settings-view:not(.active) {
     position: absolute;
     top: 0;
     left: 0;
@@ -1367,7 +1658,7 @@ code {
     pointer-events: none;
 }
 
-.config-view.active {
+.config-view.active, .settings-view.active {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
@@ -1457,7 +1748,7 @@ code {
     background: #a1a8ad;
 }
 
-/* Button group improvements for configuration views */
+/* Button group improvements for configuration and settings views */
 .btn-group .btn {
     position: relative;
     transition: all 0.3s ease;
