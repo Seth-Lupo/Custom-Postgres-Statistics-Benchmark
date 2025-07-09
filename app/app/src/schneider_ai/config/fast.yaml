@@ -1,0 +1,48 @@
+name: fast
+description: "Fast Schneider AI configuration for quick testing"
+
+# API Configuration
+api_endpoint: "http://localhost:3000"
+api_key: "1234567890"
+model: "gpt-3.5-turbo"
+temperature: 0.1  # Lower temperature for more consistent results
+session_id: "schneider_stats_fast"
+
+# RAG Settings
+rag_usage: false
+rag_threshold: 0.3
+rag_k: 3
+
+# Estimation Settings
+num_iterations: 3  # Fewer iterations for speed
+epsilon: 0.05
+
+# PostgreSQL Statistics Configuration (same as default)
+target_columns:
+  stanullfrac: 3    # null fraction column index
+  stadistinct: 5    # distinct values column index  
+  stanumbers1: 21   # statistical numbers array column index
+
+# Simplified Prompt for Faster Processing
+system_prompt: "You are a database statistics estimator. Provide quick, reasonable estimates."
+
+estimation_prompt: |
+  Estimate PostgreSQL statistics for this database:
+  
+  Tables: {col_names} columns
+  Size: {size}
+  Schema: {sample_data}
+  
+  Use any 'comment' fields in the schema to understand column/table purposes.
+  
+  Provide JSON format estimates for:
+  - stanullfrac: null fraction (0.0-1.0) 
+  - stadistinct: distinct count (positive number or negative ratio)
+  - stanumbers1: statistical array (3-5 values)
+  
+  Consider comments when estimating (e.g., "user_id" = high cardinality, "status" = low cardinality).
+  Be concise and realistic.
+
+# Validation Settings
+accuracy_threshold: 70.0  # Lower threshold for speed
+max_retries: 2 

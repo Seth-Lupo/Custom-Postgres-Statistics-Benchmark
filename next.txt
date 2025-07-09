@@ -1,2 +1,39 @@
-please make sure the diffing is visible for both settings and config. 
-Make sure that the two things in ui just become settings. 
+Supported models:
+
+- 4o-mini
+  * Lightweight and efficient language model optimized for production deployment
+  * Offers good performance while requiring minimal computational resources
+  * Designed for rapid inference and low latency applications
+
+- Claude 3 Haiku (us.anthropic.claude-3-haiku-20240307-v1:0)
+  * Smallest and fastest model in Anthropic's Claude 3 series
+  * Optimized for quick responses while maintaining high quality output
+  * Ideal for real-time applications and rapid prototyping
+  * Released in March 2024 as part of the Claude 3 family
+
+- Azure Phi-3 (azure-phi3)
+  * Microsoft's small language model trained on Azure's infrastructure
+  * Built for efficiency and low resource usage
+  * Optimized for Azure cloud deployment
+  * Strong performance on coding and technical tasks
+
+- Llama 3 2.3B Instruct (us.meta.llama3-2-3b-instruct-v1:0)
+  * Part of Meta's Llama 3 series with 2.3B parameters
+  * Instruction-tuned for better task completion
+  * Balances performance and resource usage
+  * Good for general purpose text generation and analysis
+
+- Llama 3 2.1B Instruct (us.meta.llama3-2-1b-instruct-v1:0)
+  * 2.1B parameter variant of Llama 3
+  * Instruction-tuned for following directions
+  * More efficient than larger models
+  * Suitable for medium complexity tasks
+
+- Llama 3 1.8B Instruct (us.meta.llama3-1-8b-instruct-v1:0)
+  * Most compact Llama 3 model at 1.8B parameters
+  * Optimized for low resource environments
+  * Fast inference times
+  * Best for simple to moderate complexity tasks
+
+
+{'response': '40-mini is either not supported or available for your plan. The list of supported models are: 4o-mini, us.anthropic.claude-3-haiku-20240307-v1:0, azure-phi3, us.meta.llama3-2-3b-instruct-v1:0, us.meta.llama3-2-1b-instruct-v1:0, us.meta.llama3-1-8b-instruct-v1:0', 'rag_context': ''}
