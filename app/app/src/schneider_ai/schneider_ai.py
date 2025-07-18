@@ -516,11 +516,9 @@ class SchneiderAIStatsSource(StatsSource):
                         system=self.system_prompt,
                         query=formatted_prompt,
                         temperature=self.temperature,
-                        session_id=self.session_id,
-                        rag_threshold=self.rag_threshold,
-                        rag_usage=self.rag_usage,
-                        rag_k=self.rag_k
+                        session_id=self.session_id
                     )
+                    print(response)
                     self.logger.info(f"API call completed. Response type: {type(response)}")
                     if isinstance(response, dict):
                         self.logger.info(f"Response keys: {list(response.keys())}")

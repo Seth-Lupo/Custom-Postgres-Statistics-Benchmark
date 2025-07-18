@@ -5,8 +5,8 @@ import logging
 # Get logger for this module
 logger = logging.getLogger(__name__)
 
-end_point = "http://localhost:3000"
-api_key = "1234567890"
+end_point = "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev"
+api_key = "blocked"
 
 # Configure HTTP client settings
 CLIENT_TIMEOUT = 120.0  # 2 minutes timeout for AWS API
