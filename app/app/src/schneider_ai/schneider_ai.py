@@ -9,9 +9,9 @@ from sqlalchemy import text
 from sqlmodel import Session
 import numpy as np
 import time
-
+import requests
+from pprint import pprint
 from ..base import StatsSource, StatsSourceConfig, StatsSourceSettings
-from . import reference
 
 
 class SchneiderAIStatsSource(StatsSource):
@@ -20,8 +20,6 @@ class SchneiderAIStatsSource(StatsSource):
     def __init__(self, settings: StatsSourceSettings = None, config: StatsSourceConfig = None):
         super().__init__(settings=settings, config=config)
         self.logger.info(f"Initialized {self.name()} with settings: {self.settings.name}, config: {self.config.name}")
-        
-        # Reference module is now locally available
         
         # Initialize API configuration from config
         self.api_endpoint = self.config.get_data('api_endpoint', 'https://a061igc186.execute-api.us-east-1.amazonaws.com/dev')
@@ -85,14 +83,6 @@ class SchneiderAIStatsSource(StatsSource):
         self.accuracy_threshold = self.config.get_data('accuracy_threshold', 80.0)
         self.max_retries = self.config.get_data('max_retries', 3)
         
-        # Update reference module endpoint and key
-        reference.end_point = self.api_endpoint
-        reference.api_key = self.api_key
-        
-        # Verify the reference module has been updated correctly
-        self.logger.info(f"Updated reference module endpoint: {reference.end_point}")
-        self.logger.info(f"Updated reference module API key: {reference.api_key[:20]}...{reference.api_key[-10:]}")
-        
         # Test API connection
         self._test_api_connection()
     
@@ -122,19 +112,50 @@ class SchneiderAIStatsSource(StatsSource):
         try:
             self.logger.info("🧪 Testing API connection...")
             
-            # Try to get model info first (simpler call)
-            model_info = reference.model_info()
-            if isinstance(model_info, dict):
-                self.logger.info(f"✅ API connection successful! Available models: {model_info}")
-            elif isinstance(model_info, str) and "Error" in model_info:
-                self.logger.warning(f"⚠️ API connection has issues: {model_info}")
+            # Try a simple health check or model info request
+            headers = {
+                 'x-api-key': self.api_key,
+                 'request_type': 'call'
+            }
+            
+            # Make a simple test request
+            test_payload = {
+                "model": self.model,
+                "system": "You are a helpful assistant.",
+                "query": "Hello, this is a test. Please respond with 'Connection successful'.",
+                "temperature": 0.1,
+                "lastk":0,
+                "session_id": "test_connection"
+            }
+            
+            self.logger.info(f"Testing connection to: {self.api_endpoint}")
+            self.logger.info(f"Using API key: {self.api_key[:20]}...{self.api_key[-10:]}")
+            
+            response = requests.post(
+                self.api_endpoint,
+                json=test_payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                self.logger.info(f"✅ API connection successful! Status: {response.status_code}")
+                try:
+                    response_data = response.json()
+                    self.logger.info(f"Test response: {response_data}")
+                except:
+                    self.logger.info(f"Test response (raw): {response.text}")
             else:
-                self.logger.warning(f"⚠️ Unexpected model_info response: {model_info}")
+                self.logger.warning(f"⚠️ API connection test returned status {response.status_code}: {response.reason}")
+                self.logger.warning(f"Response: {response.text}")
                 
-        except Exception as e:
+        except requests.RequestException as e:
             self.logger.error(f"❌ API connection test failed: {str(e)}")
-            self.logger.error(f"Connection details: endpoint={reference.end_point}, "
-                            f"api_key_length={len(reference.api_key)}")
+            self.logger.error(f"Connection details: endpoint={self.api_endpoint}, "
+                            f"api_key_length={len(self.api_key)}")
+            self.logger.error(f"Exception details:", exc_info=True)
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error during API connection test: {str(e)}")
             self.logger.error(f"Exception details:", exc_info=True)
     
     def get_database_schema_info(self, session: Session) -> Dict[str, Any]:
@@ -455,9 +476,9 @@ class SchneiderAIStatsSource(StatsSource):
                 self.logger.info(f"Using model: {self.model}, temperature: {self.temperature}, "
                                f"endpoint: {self.api_endpoint}")
                 
-                # Verify reference module configuration before API call
-                self.logger.info(f"Reference module endpoint: {reference.end_point}")
-                self.logger.info(f"Reference module API key: {reference.api_key[:20]}...{reference.api_key[-10:]}")
+                # Verify API configuration before API call
+                self.logger.info(f"API endpoint: {self.api_endpoint}")
+                self.logger.info(f"API key: {self.api_key[:20]}...{self.api_key[-10:]}")
                 
                 # Log the API request parameters
                 api_params = {
@@ -508,36 +529,114 @@ class SchneiderAIStatsSource(StatsSource):
                 except:
                     self.logger.debug("Could not analyze sample data size")
                 
-                # Call the AI API via reference module
-                self.logger.info("Making API call to reference.generate()...")
-                try:
-                    response = reference.generate(
-                        model=self.model,
-                        system=self.system_prompt,
-                        query=formatted_prompt,
-                        temperature=self.temperature,
-                        session_id=self.session_id
-                    )
-                    print(response)
-                    self.logger.info(f"API call completed. Response type: {type(response)}")
-                    if isinstance(response, dict):
-                        self.logger.info(f"Response keys: {list(response.keys())}")
-                    
-                except Exception as api_error:
-                    self.logger.error(f"💥 API CALL FAILED: {str(api_error)}")
-                    self.logger.error(f"Exception type: {type(api_error).__name__}")
-                    self.logger.error(f"Exception details:", exc_info=True)
-                    
+                # Call the AI API directly
+                self.logger.info("Making direct API call to LLM proxy...")
+                # Print API credentials before making the call
+                self.logger.info(f"🔑 API ENDPOINT: {self.api_endpoint}")
+                self.logger.info(f"🔑 API KEY: {self.api_key}")
+                
+                # Prepare the request payload
+                payload = {
+                    "model": self.model,
+                    "system": self.system_prompt,
+                    "query": formatted_prompt,
+                    "temperature": self.temperature,
+                    "session_id": self.session_id,
+                    "rag_usage": self.rag_usage,
+                    "rag_threshold": self.rag_threshold,
+                    "rag_k": self.rag_k
+                }
+                
+                headers = {
+                    'x-api-key': self.api_key,
+                    'request_type': 'call'
+                }
+                
+                self.logger.info(f"📤 REQUEST PAYLOAD: {json.dumps(payload, indent=2)}")
+                self.logger.info(f"📤 REQUEST HEADERS: {headers}")
+                
+                # Make HTTP request
+                response = requests.post(
+                    self.api_endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                # Print HTTP response details
+                self.logger.info(f"📋 HTTP RESPONSE ANALYSIS:")
+                self.logger.info(f"   Status Code: {response.status_code}")
+                self.logger.info(f"   Status Text: {response.reason}")
+                self.logger.info(f"   Headers: {dict(response.headers)}")
+                self.logger.info(f"   Response Type: {type(response)}")
+                
+                # Print raw response content
+                raw_content = response.text
+                self.logger.info(f"   Raw Content Length: {len(raw_content)}")
+                self.logger.info(f"   Raw Content: {raw_content}")
+                
+                # Check if the request was successful
+                if response.status_code != 200:
+                    self.logger.error(f"❌ HTTP request failed with status {response.status_code}: {response.reason}")
+                    self.logger.error(f"Error response content: {raw_content}")
                     # Continue to the next retry
                     if attempt < self.max_retries - 1:
-                        self.logger.info(f"API call failed, retrying in 2 seconds...")
+                        self.logger.info(f"HTTP request failed, retrying in 2 seconds...")
                         time.sleep(2)
                     continue
                 
-                if isinstance(response, dict) and 'response' in response:
-                    ai_response = response['response']
-                    self.logger.info(f"Successfully received AI estimation response (length: {len(ai_response)} chars)")
+                self.logger.info("✅ HTTP request successful")
+                
+                # Try to parse JSON response
+                try:
+                    response_data = response.json()
+                    self.logger.info(f"📋 PARSED JSON RESPONSE:")
+                    self.logger.info(f"   Type: {type(response_data)}")
                     
+                    # Print the entire response object
+                    self.logger.info("🔍 COMPLETE RESPONSE OBJECT:")
+                    self.logger.info(json.dumps(response_data, indent=2))
+                   
+                    
+                    if isinstance(response_data, dict):
+                        self.logger.info(f"   Dictionary keys: {list(response_data.keys())}")
+                        for key, value in response_data.items():
+                            value_str = str(value) if len(str(value)) <= 200 else str(value)[:200] + "..."
+                            self.logger.info(f"   {key}: {type(value)} = {value_str}")
+                    else:
+                        self.logger.info(f"   Content: {response_data}")
+                        
+                    # Use the parsed response data for further processing
+                    response = response_data
+                    
+                except json.JSONDecodeError as je:
+                    self.logger.error(f"❌ Failed to parse JSON response: {je}")
+                    self.logger.error(f"Raw response content: {raw_content}")
+                    # Use the raw text as response
+                    response = raw_content
+                
+                # Process the response
+                ai_response = None
+                
+                # Extract AI response based on format
+                if isinstance(response, dict) and 'response' in response:
+                    # Standard JSON format with 'response' key
+                    ai_response = response['response']
+                    self.logger.info(f"Successfully received AI estimation response from JSON (length: {len(ai_response)} chars)")
+                elif isinstance(response, str) and (';' in response or ',' in response):
+                    # Plain text CSV response - this is valid, not an error
+                    ai_response = response
+                    self.logger.info(f"Successfully received AI estimation response as plain text CSV (length: {len(ai_response)} chars)")
+                elif isinstance(response, dict):
+                    # JSON response with different structure - try common keys
+                    self.logger.warning(f"Response is JSON but missing 'response' key. Keys found: {list(response.keys())}")
+                    for key in ['data', 'result', 'content', 'text', 'body', 'output']:
+                        if key in response and response[key]:
+                            ai_response = response[key]
+                            self.logger.info(f"Found response in '{key}' field (length: {len(str(ai_response))} chars)")
+                            break
+                
+                if ai_response:
                     # Log the full AI response for debugging - always at INFO level so it's visible
                     self.logger.info(f"=== FULL AI RESPONSE ===")
                     self.logger.info(ai_response)
@@ -579,21 +678,16 @@ class SchneiderAIStatsSource(StatsSource):
                         self.logger.error(ai_response)
                         self.logger.error(f"=== END FAILED AI RESPONSE ===")
                 elif isinstance(response, str):
-                    # Handle string response (error message from API)
-                    self.logger.error(f"🚨 AI API returned string error: {response}")
-                    self.logger.error("DEBUGGING: Full AI request that caused error:")
-                    self.logger.error(f"Endpoint: {reference.end_point}")
-                    self.logger.error(f"API Key: {reference.api_key[:20]}...{reference.api_key[-10:]}")
-                    self.logger.error(f"Prompt length: {len(formatted_prompt)}")
-                    self.logger.error(f"Model: {self.model}, Temperature: {self.temperature}")
-                    self.logger.error(f"Session ID: {self.session_id}")
-                    self.logger.error(f"RAG settings: usage={self.rag_usage}, threshold={self.rag_threshold}, k={self.rag_k}")
-                    self.logger.error(f"=== ERROR RESPONSE ===")
+                    # Plain text that doesn't look like CSV - likely an error message
+                    self.logger.error(f"🚨 AI API returned unexpected plain text (not CSV format): {response[:200]}...")
+                    self.logger.error("DEBUGGING: Full response:")
+                    self.logger.error(f"=== PLAIN TEXT RESPONSE ===")
                     self.logger.error(response)
-                    self.logger.error(f"=== END ERROR RESPONSE ===")
+                    self.logger.error(f"=== END PLAIN TEXT RESPONSE ===")
                 else:
-                    self.logger.error(f"🚨 Unexpected AI response format: {type(response)}")
-                    self.logger.error(f"Response content: {response}")
+                    # Completely unexpected response type
+                    self.logger.error(f"🚨 Unexpected AI response type: {type(response)}")
+                    self.logger.error(f"Response: {str(response)[:200]}...")
                     self.logger.error(f"=== UNEXPECTED RESPONSE ===")
                     self.logger.error(f"{response}")
                     self.logger.error(f"=== END UNEXPECTED RESPONSE ===")
@@ -602,11 +696,28 @@ class SchneiderAIStatsSource(StatsSource):
                 if attempt < self.max_retries - 1:
                     self.logger.info(f"Retrying AI estimation in 2 seconds...")
                     time.sleep(2)
+                    
+            except requests.RequestException as req_error:
+                self.logger.error(f"💥 HTTP REQUEST FAILED: {str(req_error)}")
+                self.logger.error(f"Request exception type: {type(req_error).__name__}")
+                self.logger.error(f"Exception details:", exc_info=True)
+                
+                # Continue to the next retry
+                if attempt < self.max_retries - 1:
+                    self.logger.info(f"HTTP request failed, retrying in 2 seconds...")
+                    time.sleep(2)
+                continue
                 
             except Exception as e:
-                self.logger.error(f"Failed to get AI estimation on attempt {attempt + 1}: {str(e)}")
+                self.logger.error(f"💥 UNEXPECTED ERROR: {str(e)}")
+                self.logger.error(f"Exception type: {type(e).__name__}")
+                self.logger.error(f"Exception details:", exc_info=True)
+                
+                # Continue to the next retry
                 if attempt < self.max_retries - 1:
+                    self.logger.info(f"Unexpected error, retrying in 2 seconds...")
                     time.sleep(2)
+                continue
         
         self.logger.error(f"Failed to get valid AI estimation after {self.max_retries} attempts")
         return {}
