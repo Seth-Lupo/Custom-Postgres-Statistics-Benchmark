@@ -1,9 +1,8 @@
 name: request_test
 description: "just testing requests"
 
-# API Configuration
-api_endpoint: "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev"
-api_key: "blocked"
+# Provider Configuration - can be "llmproxy" or "openai"
+provider: "llmproxy"
 model: "us.anthropic.claude-3-haiku-20240307-v1:0"
 temperature: 0.3
 session_id: "schneider_stats_session"

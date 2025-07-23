@@ -8,6 +8,10 @@ from .routers import upload, run, results
 from sqlmodel import select, Session
 from .models import Experiment
 from markdown_it import MarkdownIt
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 templates = Jinja2Templates(directory="app/templates")
 

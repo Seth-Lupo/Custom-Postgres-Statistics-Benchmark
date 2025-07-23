@@ -31,9 +31,18 @@ SchneiderAIStatsSource
 ## Configuration Files
 
 ### `config/default.yaml`
-- Full-featured configuration with detailed prompts
+- Full-featured configuration using LLM proxy
 - 10 iterations for robust estimation
 - Temperature 0.3 for balanced creativity/consistency
+
+### `config/openai.yaml`
+- Configuration for using OpenAI directly
+- Uses GPT-4o-mini model by default
+- Optimized prompts for OpenAI models
+
+### `config/fast.yaml`
+- Quick testing configuration using LLM proxy
+- Simplified prompts for testing
 
 ## Core Methods
 
@@ -78,12 +87,23 @@ with Session(engine) as session:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `api_endpoint` | LLM API endpoint | `http://localhost:3000` |
-| `api_key` | API authentication key | `1234567890` |
-| `model` | LLM model to use | `gpt-3.5-turbo` |
+| `provider` | AI provider to use ("llmproxy" or "openai") | `"llmproxy"` |
+| `model` | LLM model to use | `"us.anthropic.claude-3-haiku-20240307-v1:0"` (llmproxy) or `"gpt-4o-mini"` (openai) |
 | `temperature` | Response creativity level | `0.3` |
 | `num_iterations` | Estimation attempts | `10` |
-| `target_columns` | pg_statistic columns to modify | `{stanullfrac: 3, stadistinct: 5, stanumbers1: 21}` |
+| `target_columns` | pg_statistic columns to modify | `{stanullfrac: 3, stadistinct: 5, stanumbers1: 16}` |
+| `session_id` | Session identifier for LLM proxy | `"schneider_stats_session"` |
+
+## Environment Variables
+
+The following environment variables must be set in `app/app/.env`:
+
+| Variable | Description | Required For |
+|----------|-------------|--------------|
+| `LLMPROXY_API_ENDPOINT` | LLM proxy API endpoint | llmproxy provider |
+| `LLMPROXY_API_KEY` | LLM proxy API key | llmproxy provider |
+| `OPENAI_API_KEY` | OpenAI API key | openai provider |
+| `OPENAI_API_URL` | OpenAI API base URL | openai provider (optional) |
 
 ## Error Handling
 

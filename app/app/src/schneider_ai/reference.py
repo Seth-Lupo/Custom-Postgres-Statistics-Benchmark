@@ -1,12 +1,14 @@
 import json
 import httpx
 import logging
+import os
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
 
-end_point = "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev"
-api_key = "blocked"
+# Load configuration from environment variables
+end_point = os.getenv('LLMPROXY_API_ENDPOINT', 'https://a061igc186.execute-api.us-east-1.amazonaws.com/dev')
+api_key = os.getenv('LLMPROXY_API_KEY', 'blocked')
 
 # Configure HTTP client settings
 CLIENT_TIMEOUT = 120.0  # 2 minutes timeout for AWS API

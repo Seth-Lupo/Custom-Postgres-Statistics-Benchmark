@@ -14,6 +14,13 @@ import requests
 from pprint import pprint
 from ..base import StatsSource, StatsSourceConfig, StatsSourceSettings
 
+# Import OpenAI for OpenAI provider support
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 # Advanced logging flag for debugging pg_statistic array issues
 ADVANCED_LOGGING = True
 
@@ -25,12 +32,25 @@ class SchneiderAIStatsSource(StatsSource):
         super().__init__(settings=settings, config=config)
         self.logger.debug(f"Initialized {self.name()} with settings: {self.settings.name}, config: {self.config.name}")
         
-        # Initialize API configuration from config
-        self.api_endpoint = self.config.get_data('api_endpoint', 'https://a061igc186.execute-api.us-east-1.amazonaws.com/dev')
-        self.api_key = self.config.get_data('api_key', 'blocked')
+        # Initialize provider configuration from config and environment
+        self.provider = self.config.get_data('provider', 'llmproxy')
         self.model = self.config.get_data('model', 'us.anthropic.claude-3-haiku-20240307-v1:0')
         self.temperature = self.config.get_data('temperature', 0.3)
         self.session_id = self.config.get_data('session_id', 'schneider_stats_session')
+        
+        # Initialize API configuration from environment variables based on provider
+        if self.provider == 'llmproxy':
+            self.api_endpoint = os.getenv('LLMPROXY_API_ENDPOINT', 'https://a061igc186.execute-api.us-east-1.amazonaws.com/dev')
+            self.api_key = os.getenv('LLMPROXY_API_KEY', 'blocked')
+        elif self.provider == 'openai':
+            self.api_endpoint = os.getenv('OPENAI_API_URL', 'https://api.openai.com/v1')
+            self.api_key = os.getenv('OPENAI_API_KEY')
+            if not self.api_key:
+                raise ValueError("OPENAI_API_KEY environment variable is required when using OpenAI provider")
+            if not OPENAI_AVAILABLE:
+                raise ImportError("OpenAI library is not installed. Please run: pip install openai")
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}. Must be 'llmproxy' or 'openai'")
         
         # RAG settings
         self.rag_usage = self.config.get_data('rag_usage', False)
@@ -102,6 +122,84 @@ class SchneiderAIStatsSource(StatsSource):
         # Test API connection
         self._test_api_connection()
     
+    def _call_ai_api(self, system_prompt: str, user_prompt: str) -> str:
+        """
+        Call the appropriate AI API based on the configured provider.
+        Returns the AI response as a string.
+        """
+        if self.provider == 'llmproxy':
+            return self._call_llmproxy_api(system_prompt, user_prompt)
+        elif self.provider == 'openai':
+            return self._call_openai_api(system_prompt, user_prompt)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+    
+    def _call_llmproxy_api(self, system_prompt: str, user_prompt: str) -> str:
+        """Call the LLM proxy API using the existing reference.py approach."""
+        payload = {
+            "model": self.model,
+            "system": system_prompt,
+            "query": user_prompt,
+            "temperature": self.temperature,
+            "session_id": self.session_id,
+            "rag_usage": self.rag_usage,
+            "rag_threshold": self.rag_threshold,
+            "rag_k": self.rag_k
+        }
+        
+        headers = {
+            'x-api-key': self.api_key,
+            'request_type': 'call'
+        }
+        
+        self.logger.debug(f"Making LLM proxy API call to: {self.api_endpoint}")
+        
+        response = requests.post(
+            self.api_endpoint,
+            json=payload,
+            headers=headers,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if response.status_code != 200:
+            raise requests.RequestException(f"HTTP request failed with status {response.status_code}: {response.reason}")
+        
+        # Try to parse JSON response
+        try:
+            response_data = response.json()
+            if isinstance(response_data, dict) and 'result' in response_data:
+                return response_data['result']
+            else:
+                return response.text
+        except json.JSONDecodeError:
+            return response.text
+    
+    def _call_openai_api(self, system_prompt: str, user_prompt: str) -> str:
+        """Call the OpenAI API directly."""
+        try:
+            client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.api_endpoint
+            )
+            
+            self.logger.debug(f"Making OpenAI API call with model: {self.model}")
+            
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=self.temperature,
+                timeout=300
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            self.logger.error(f"OpenAI API call failed: {str(e)}")
+            raise
+    
     def get_pg_statistic_rows(self, session: Session) -> List[Tuple]:
         """
         Gets all the rows of pg_statistic that belong to the public namespace.
@@ -126,42 +224,21 @@ class SchneiderAIStatsSource(StatsSource):
     def _test_api_connection(self):
         """Test the API connection to ensure it's working before making estimation calls."""
         try:
-            self.logger.debug("Testing API connection...")
+            self.logger.debug(f"Testing {self.provider} API connection...")
             
-            # Try a simple health check or model info request
-            headers = {
-                 'x-api-key': self.api_key,
-                 'request_type': 'call'
-            }
-            
-            # Make a simple test request
-            test_payload = {
-                "model": self.model,
-                "system": "You are a helpful assistant.",
-                "query": "Hello, this is a test. Please respond with 'Connection successful'.",
-                "temperature": 0.1,
-                "lastk":0,
-                "session_id": "test_connection"
-            }
-            
-            self.logger.debug(f"Testing connection to: {self.api_endpoint}")
-            
-            response = requests.post(
-                self.api_endpoint,
-                json=test_payload,
-                headers=headers,
-                timeout=30
+            # Test the API with a simple request
+            test_response = self._call_ai_api(
+                "You are a helpful assistant.",
+                "Hello, this is a test. Please respond with 'Connection successful'."
             )
             
-            if response.status_code == 200:
-                self.logger.debug(f"API connection successful. Status: {response.status_code}")
+            if test_response and "successful" in test_response.lower():
+                self.logger.debug(f"{self.provider} API connection successful")
             else:
-                self.logger.warning(f"API connection test returned status {response.status_code}: {response.reason}")
+                self.logger.warning(f"{self.provider} API connection test returned: {test_response}")
                 
-        except requests.RequestException as e:
-            self.logger.error(f"API connection test failed: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Unexpected error during API connection test: {str(e)}", exc_info=True)
+            self.logger.error(f"{self.provider} API connection test failed: {str(e)}")
     
     def get_database_schema_info(self, session: Session) -> Dict[str, Any]:
         """Get comprehensive database schema information for AI estimation."""
@@ -471,79 +548,13 @@ class SchneiderAIStatsSource(StatsSource):
                 
                 # Skip sample data size analysis
                 
-                # Call the AI API directly
-                self.logger.debug("Making API call to LLM proxy...")
+                # Call the AI API using the provider-specific method
+                self.logger.debug(f"Making API call using {self.provider} provider...")
                 
-                # Prepare the request payload
-                payload = {
-                    "model": self.model,
-                    "system": self.system_prompt,
-                    "query": formatted_prompt,
-                    "temperature": self.temperature,
-                    "session_id": self.session_id,
-                    "rag_usage": self.rag_usage,
-                    "rag_threshold": self.rag_threshold,
-                    "rag_k": self.rag_k
-                }
+                # Call the AI API
+                ai_response = self._call_ai_api(self.system_prompt, formatted_prompt)
                 
-                headers = {
-                    'x-api-key': self.api_key,
-                    'request_type': 'call'
-                }
-                
-                self.logger.debug(f"Request payload size: {len(json.dumps(payload))} chars")
-                
-                # Make HTTP request
-                response = requests.post(
-                    self.api_endpoint,
-                    json=payload,
-                    headers=headers,
-                    timeout=300  # 5 minute timeout
-                )
-                
-                # Check response
-                raw_content = response.text
-                self.logger.debug(f"HTTP response: {response.status_code} - {len(raw_content)} chars")
-                
-                # Check if the request was successful
-                if response.status_code != 200:
-                    self.logger.error(f"HTTP request failed with status {response.status_code}: {response.reason}")
-                    self.logger.error(f"Error response content: {raw_content}")
-                    # Continue to the next retry
-                    if attempt < self.max_retries - 1:
-                        self.logger.debug(f"HTTP request failed, retrying in 2 seconds...")
-                        time.sleep(2)
-                    continue
-                
-                self.logger.debug("HTTP request successful")
-                
-                # Try to parse JSON response
-                try:
-                    response_data = response.json()
-                    self.logger.debug(f"Parsed JSON response with keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'non-dict'}")
-                    response = response_data
-                except json.JSONDecodeError as je:
-                    self.logger.debug(f"Failed to parse JSON response: {je}")
-                    response = raw_content
-                
-                # Process the response
-                ai_response = None
-                
-                # Extract AI response based on format
-                if isinstance(response, dict) and 'response' in response:
-                    ai_response = response['response']
-                    self.logger.debug(f"Received AI response from JSON (length: {len(ai_response)} chars)")
-                elif isinstance(response, str) and (';' in response or ',' in response):
-                    ai_response = response
-                    self.logger.debug(f"Received AI response as plain text CSV (length: {len(ai_response)} chars)")
-                elif isinstance(response, dict):
-                    # JSON response with different structure - try common keys
-                    self.logger.warning(f"Response is JSON but missing 'response' key. Keys found: {list(response.keys())}")
-                    for key in ['data', 'result', 'content', 'text', 'body', 'output']:
-                        if key in response and response[key]:
-                            ai_response = response[key]
-                            self.logger.debug(f"Found response in '{key}' field (length: {len(str(ai_response))} chars)")
-                            break
+                self.logger.debug(f"Received AI response: {len(ai_response)} chars")
                 
                 if ai_response:
                     self.logger.debug(f"Processing AI response ({len(ai_response)} chars)")
@@ -581,24 +592,16 @@ class SchneiderAIStatsSource(StatsSource):
                         if self.logger.isEnabledFor(logging.DEBUG):
                             self.logger.debug(f"Post-processed response that failed to parse: '{processed_response}'")
                             self.logger.debug(f"Original AI response that failed to parse: {ai_response}")
-                elif isinstance(response, str):
-                    # Plain text that doesn't look like CSV - likely an error message
-                    self.logger.error(f"AI API returned unexpected plain text (not CSV format): {response[:200]}...")
-                    # Log full context on error
-                    self.logger.error(f"Full AI prompt that failed:")
-                    self.logger.error(f"System: {self.system_prompt}")
-                    self.logger.error(f"User: {formatted_prompt}")
-                    if self.logger.isEnabledFor(logging.DEBUG):
-                        self.logger.debug(f"Full response: {response}")
+                # Note: This elif block is no longer needed since ai_response is always a string now
                 else:
-                    # Completely unexpected response type
-                    self.logger.error(f"Unexpected AI response type: {type(response)}")
+                    # No valid AI response received
+                    self.logger.error("No valid AI response received or empty response")
                     # Log full context on error
                     self.logger.error(f"Full AI prompt that failed:")
                     self.logger.error(f"System: {self.system_prompt}")
                     self.logger.error(f"User: {formatted_prompt}")
                     if self.logger.isEnabledFor(logging.DEBUG):
-                        self.logger.debug(f"Response: {response}")
+                        self.logger.debug(f"AI Response: {ai_response}")
                 
                 # If we got here, this attempt failed - continue to next attempt
                 if attempt < self.max_retries - 1:
