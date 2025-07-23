@@ -779,17 +779,43 @@
                     <div id="documentContent" style="display: none;">
                         <!-- Document metadata -->
                         <div class="row mb-3">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <strong>Type:</strong> <span id="documentContentType"></span>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <strong>Size:</strong> <span id="documentSize"></span>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="btn-group btn-group-sm" role="group" id="documentViewToggle" style="display: none;">
+                                    <button type="button" class="btn btn-outline-primary active" onclick="showDocumentView('table')">
+                                        <i class="bi bi-table me-1"></i>Table
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" onclick="showDocumentView('raw')">
+                                        <i class="bi bi-file-text me-1"></i>Raw
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <!-- Document content -->
                         <div class="card">
                             <div class="card-body p-0">
-                                <pre id="documentText" class="mb-0 bg-light p-3" style="max-height: 500px; overflow-y: auto; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace; font-size: 0.875rem; line-height: 1.4;"></pre>
+                                <!-- Table view for CSV content -->
+                                <div id="documentTableView" style="display: none;">
+                                    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                        <table class="table table-striped table-hover mb-0" id="documentTable">
+                                            <thead class="table-dark sticky-top" id="documentTableHead">
+                                                <!-- Headers populated dynamically -->
+                                            </thead>
+                                            <tbody id="documentTableBody">
+                                                <!-- Data populated dynamically -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <!-- Raw text view -->
+                                <div id="documentTextView">
+                                    <pre id="documentText" class="mb-0 bg-light p-3" style="max-height: 500px; overflow-y: auto; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace; font-size: 0.875rem; line-height: 1.4;"></pre>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1815,6 +1841,8 @@ function populateDocumentsTable() {
     });
 }
 
+let currentDocumentData = null;
+
 function viewDocument(documentId) {
     currentDocumentId = documentId;
     
@@ -1836,6 +1864,8 @@ function viewDocument(documentId) {
             return response.json();
         })
         .then(doc => {
+            currentDocumentData = doc;
+            
             // Update modal title
             document.getElementById('documentModalTitle').textContent = doc.name;
             
@@ -1843,8 +1873,21 @@ function viewDocument(documentId) {
             document.getElementById('documentContentType').textContent = doc.content_type;
             document.getElementById('documentSize').textContent = formatFileSize(doc.size_bytes);
             
-            // Update content
-            document.getElementById('documentText').textContent = doc.content;
+            // Determine view mode based on content type and document type
+            const shouldShowTable = isCSVContent(doc);
+            
+            if (shouldShowTable) {
+                // Show view toggle buttons for CSV content
+                document.getElementById('documentViewToggle').style.display = 'flex';
+                
+                // Default to table view for CSV, raw view for prompts
+                const defaultView = (doc.document_type === 'ai_prompt') ? 'raw' : 'table';
+                showDocumentView(defaultView);
+            } else {
+                // Hide view toggle for non-CSV content
+                document.getElementById('documentViewToggle').style.display = 'none';
+                showDocumentView('raw');
+            }
             
             // Hide loading, show content
             document.getElementById('documentLoadingSpinner').style.display = 'none';
@@ -1857,6 +1900,135 @@ function viewDocument(documentId) {
             document.getElementById('documentError').style.display = 'block';
             document.getElementById('documentErrorMessage').textContent = 'Failed to load document: ' + error.message;
         });
+}
+
+function isCSVContent(doc) {
+    // Check if content is CSV based on content type or if it contains semicolon/comma separated data
+    if (doc.content_type === 'text/csv') return true;
+    
+    // Check for AI responses that are likely CSV format
+    if (doc.document_type === 'ai_response' && (doc.content.includes(';') || (doc.content.includes(',') && doc.content.includes('\n')))) {
+        return true;
+    }
+    
+    return false;
+}
+
+function showDocumentView(viewType) {
+    const tableView = document.getElementById('documentTableView');
+    const textView = document.getElementById('documentTextView');
+    const buttons = document.querySelectorAll('#documentViewToggle .btn');
+    
+    // Update button states
+    buttons.forEach(btn => {
+        btn.classList.remove('active', 'btn-primary');
+        btn.classList.add('btn-outline-secondary');
+    });
+    
+    if (viewType === 'table') {
+        // Show table view
+        tableView.style.display = 'block';
+        textView.style.display = 'none';
+        
+        // Activate table button
+        const tableBtn = document.querySelector('#documentViewToggle .btn[onclick*="table"]');
+        if (tableBtn) {
+            tableBtn.classList.remove('btn-outline-secondary');
+            tableBtn.classList.add('active', 'btn-primary');
+        }
+        
+        // Parse and display CSV as table
+        if (currentDocumentData) {
+            displayAsTable(currentDocumentData.content);
+        }
+    } else {
+        // Show raw text view
+        tableView.style.display = 'none';
+        textView.style.display = 'block';
+        
+        // Activate raw button
+        const rawBtn = document.querySelector('#documentViewToggle .btn[onclick*="raw"]');
+        if (rawBtn) {
+            rawBtn.classList.remove('btn-outline-secondary');
+            rawBtn.classList.add('active', 'btn-primary');
+        }
+        
+        // Display raw content
+        if (currentDocumentData) {
+            document.getElementById('documentText').textContent = currentDocumentData.content;
+        }
+    }
+}
+
+function displayAsTable(csvContent) {
+    const tableHead = document.getElementById('documentTableHead');
+    const tableBody = document.getElementById('documentTableBody');
+    
+    // Clear existing content
+    tableHead.innerHTML = '';
+    tableBody.innerHTML = '';
+    
+    try {
+        // Parse CSV content (handle both semicolon and comma delimiters)
+        const lines = csvContent.trim().split('\n');
+        if (lines.length === 0) return;
+        
+        // Detect delimiter
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes(';') ? ';' : ',';
+        
+        // Parse header
+        const headers = lines[0].split(delimiter).map(h => h.trim());
+        
+        // Create header row
+        const headerRow = document.createElement('tr');
+        headers.forEach(header => {
+            const th = document.createElement('th');
+            th.textContent = header;
+            th.className = 'text-nowrap';
+            headerRow.appendChild(th);
+        });
+        tableHead.appendChild(headerRow);
+        
+        // Parse data rows
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue; // Skip empty lines
+            
+            const cells = line.split(delimiter).map(c => c.trim());
+            const row = document.createElement('tr');
+            
+            cells.forEach((cell, index) => {
+                const td = document.createElement('td');
+                
+                // Handle special formatting for different cell types
+                if (cell === '' || cell === 'NULL' || cell === 'null') {
+                    td.innerHTML = '<span class="text-muted">-</span>';
+                } else if (cell.startsWith('{') && cell.endsWith('}')) {
+                    // PostgreSQL array format
+                    td.innerHTML = `<code class="text-info">${cell}</code>`;
+                } else if (!isNaN(cell) && cell !== '') {
+                    // Numeric values
+                    td.innerHTML = `<span class="text-success">${cell}</span>`;
+                } else {
+                    // Regular text
+                    td.textContent = cell;
+                }
+                
+                td.className = 'align-middle';
+                row.appendChild(td);
+            });
+            
+            tableBody.appendChild(row);
+        }
+        
+    } catch (error) {
+        console.error('Error parsing CSV:', error);
+        
+        // Fallback to raw text if parsing fails
+        tableHead.innerHTML = '<tr><th>Content</th></tr>';
+        tableBody.innerHTML = `<tr><td><pre>${csvContent}</pre></td></tr>`;
+    }
 }
 
 function downloadDocument() {
