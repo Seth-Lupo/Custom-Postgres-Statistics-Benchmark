@@ -59,6 +59,61 @@ def create_db_and_tables():
     """Create database tables."""
     with engine.begin() as conn:
         SQLModel.metadata.create_all(conn)
+        
+    # Run any pending migrations
+    run_migrations()
+
+def run_migrations():
+    """Run database migrations."""
+    db_logger.info("Running database migrations...")
+    
+    try:
+        with engine.begin() as conn:
+            # Check if document table exists
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'document'
+                );
+            """))
+            
+            document_table_exists = result.scalar()
+            
+            if not document_table_exists:
+                db_logger.info("Creating document table...")
+                
+                # Create document table manually to ensure all columns are present
+                conn.execute(text("""
+                    CREATE TABLE document (
+                        id SERIAL PRIMARY KEY,
+                        experiment_id INTEGER NOT NULL REFERENCES experiment(id) ON DELETE CASCADE,
+                        name VARCHAR(200) NOT NULL,
+                        filename VARCHAR(200) NOT NULL,
+                        content_type VARCHAR(100) NOT NULL,
+                        document_type VARCHAR(50) NOT NULL,
+                        content TEXT NOT NULL,
+                        size_bytes INTEGER DEFAULT 0,
+                        source VARCHAR(200),
+                        extra_metadata TEXT,
+                        created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+                """))
+                
+                # Create indexes for better performance
+                conn.execute(text("CREATE INDEX idx_document_experiment_id ON document(experiment_id);"))
+                conn.execute(text("CREATE INDEX idx_document_type ON document(document_type);"))
+                conn.execute(text("CREATE INDEX idx_document_created_at ON document(created_at);"))
+                
+                db_logger.info("Document table created successfully with indexes")
+            else:
+                db_logger.info("Document table already exists, skipping creation")
+                
+        db_logger.info("Migrations completed successfully")
+        
+    except Exception as e:
+        db_logger.error(f"Error running migrations: {e}")
+        raise
 
 def get_session():
     """Dependency to get database session."""

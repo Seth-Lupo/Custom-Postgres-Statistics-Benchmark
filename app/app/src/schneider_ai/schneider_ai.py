@@ -564,6 +564,9 @@ class SchneiderAIStatsSource(StatsSource):
                     
                     # Parse and validate the response
                     parsed_estimates = self._parse_ai_response(processed_response)
+                    # Save AI response as document instead of logging it
+                    self._save_ai_interaction_as_documents(formatted_prompt, ai_response)
+                    
                     if parsed_estimates:
                         self.logger.info(f"Successfully parsed estimates for {len(parsed_estimates)} tables")
                         
@@ -575,33 +578,20 @@ class SchneiderAIStatsSource(StatsSource):
                             return validated_estimates
                         else:
                             self.logger.error("AI estimates failed validation - no valid estimates found")
-                            # Log full context on error
-                            self.logger.error(f"Full AI prompt that failed:")
-                            self.logger.error(f"System: {self.system_prompt}")
-                            self.logger.error(f"User: {formatted_prompt}")
-                            self.logger.error(f"AI Response: {ai_response}")
-                            if self.logger.isEnabledFor(logging.DEBUG):
-                                self.logger.debug(f"Parsed estimates that failed validation: {parsed_estimates}")
+                            # Save error context as document
+                            error_context = f"VALIDATION FAILED\n\nSystem Prompt:\n{self.system_prompt}\n\nUser Prompt:\n{formatted_prompt}\n\nAI Response:\n{ai_response}\n\nParsed Estimates:\n{parsed_estimates if self.logger.isEnabledFor(logging.DEBUG) else 'Debug logging disabled'}"
+                            self._save_document(error_context, "validation_error", "Validation Error Context")
                     else:
                         self.logger.error("Failed to parse AI response - no estimates extracted")
-                        # Log full context on error
-                        self.logger.error(f"Full AI prompt that failed:")
-                        self.logger.error(f"System: {self.system_prompt}")
-                        self.logger.error(f"User: {formatted_prompt}")
-                        self.logger.error(f"AI Response: {ai_response}")
-                        if self.logger.isEnabledFor(logging.DEBUG):
-                            self.logger.debug(f"Post-processed response that failed to parse: '{processed_response}'")
-                            self.logger.debug(f"Original AI response that failed to parse: {ai_response}")
-                # Note: This elif block is no longer needed since ai_response is always a string now
+                        # Save error context as document
+                        error_context = f"PARSING FAILED\n\nSystem Prompt:\n{self.system_prompt}\n\nUser Prompt:\n{formatted_prompt}\n\nAI Response:\n{ai_response}\n\nPost-processed Response:\n{processed_response if self.logger.isEnabledFor(logging.DEBUG) else 'Debug logging disabled'}"
+                        self._save_document(error_context, "parsing_error", "Parsing Error Context")
                 else:
                     # No valid AI response received
                     self.logger.error("No valid AI response received or empty response")
-                    # Log full context on error
-                    self.logger.error(f"Full AI prompt that failed:")
-                    self.logger.error(f"System: {self.system_prompt}")
-                    self.logger.error(f"User: {formatted_prompt}")
-                    if self.logger.isEnabledFor(logging.DEBUG):
-                        self.logger.debug(f"AI Response: {ai_response}")
+                    # Save error context as document
+                    error_context = f"NO RESPONSE RECEIVED\n\nSystem Prompt:\n{self.system_prompt}\n\nUser Prompt:\n{formatted_prompt}\n\nAI Response:\n{ai_response if self.logger.isEnabledFor(logging.DEBUG) else 'Debug logging disabled'}"
+                    self._save_document(error_context, "no_response_error", "No Response Error Context")
                 
                 # If we got here, this attempt failed - continue to next attempt
                 if attempt < self.max_retries - 1:
@@ -1415,6 +1405,57 @@ class SchneiderAIStatsSource(StatsSource):
             'largest_table': max(tables.items(), key=lambda x: x[1].get('row_count', 0))[0] if tables else None,
             'average_table_size': total_rows // len(tables) if tables else 0
         }
+
+    def _save_ai_interaction_as_documents(self, prompt: str, response: str) -> None:
+        """Save AI prompt and response as separate documents."""
+        self.logger.info(f"🔍 DEBUG: Attempting to save AI interaction, experiment_id={self.experiment_id}")
+        if self.experiment_id is not None:
+            try:
+                self.logger.info(f"🔍 DEBUG: Importing save_api_response_as_document for experiment {self.experiment_id}")
+                from ...routers.document_routes import save_api_response_as_document
+                
+                # Save the prompt
+                self.logger.info(f"🔍 DEBUG: Saving AI prompt for experiment {self.experiment_id} (length: {len(prompt)})")
+                prompt_doc_id = save_api_response_as_document(
+                    experiment_id=self.experiment_id,
+                    response_content=prompt,
+                    response_type="ai_prompt",
+                    source_description="AI API Prompt"
+                )
+                self.logger.info(f"🔍 DEBUG: Saved AI prompt as document ID {prompt_doc_id}")
+                
+                # Save the response  
+                self.logger.info(f"🔍 DEBUG: Saving AI response for experiment {self.experiment_id} (length: {len(response)})")
+                response_doc_id = save_api_response_as_document(
+                    experiment_id=self.experiment_id,
+                    response_content=response,
+                    response_type="ai_response", 
+                    source_description="AI API Response"
+                )
+                self.logger.info(f"🔍 DEBUG: Saved AI response as document ID {response_doc_id}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to save AI interaction as documents: {str(e)}")
+        else:
+            self.logger.warning("Cannot save AI interaction - no experiment context set")
+    
+    def _save_document(self, content: str, doc_type: str, doc_name: str) -> None:
+        """Save content as a document."""
+        if self.experiment_id is not None:
+            try:
+                from ...routers.document_routes import save_api_response_as_document
+                
+                save_api_response_as_document(
+                    experiment_id=self.experiment_id,
+                    response_content=content,
+                    response_type=doc_type,
+                    source_description=doc_name
+                )
+                
+            except Exception as e:
+                self.logger.error(f"Failed to save document: {str(e)}")
+        else:
+            self.logger.warning(f"Cannot save document '{doc_name}' - no experiment context set")
 
     def _validate_ai_estimates(self, estimates: Dict[str, Any], schema_info: Dict[str, Any]) -> Dict[str, Any]:
         """

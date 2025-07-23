@@ -184,6 +184,9 @@ class ExperimentRunner:
             query, iterations, stats_reset_strategy, transaction_handling
         )
         
+        # Set experiment context on stats source for document association  
+        stats_source_instance.set_experiment_context(experiment.id)
+        
         # Execute the experiment
         try:
             self._execute_experiment_trials(

@@ -5,7 +5,7 @@ from sqlmodel import Session
 import yaml
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 
 class StatsSourceSettings:
@@ -62,9 +62,21 @@ class StatsSourceLegacyConfig:
 
 
 class StatsSource(ABC):
-    """Abstract base class for statistics sources."""
+    """
+    Abstract base class for all statistics sources.
+    
+    This class provides the interface and common functionality for different
+    PostgreSQL statistics estimation methods.
+    """
     
     def __init__(self, settings: StatsSourceSettings = None, config: StatsSourceConfig = None, legacy_config: StatsSourceLegacyConfig = None):
+        """
+        Initialize the statistics source.
+        
+        Args:
+            settings: Settings object (if None, loads default settings)
+            config: Configuration object (if None, loads default configuration)
+        """
         # Support both new and legacy initialization patterns
         if legacy_config:
             # Legacy mode - convert to new format
@@ -74,8 +86,16 @@ class StatsSource(ABC):
             self.settings = settings or self._load_default_settings()
             self.config = config or self._load_default_config()
         
-        # Use the specialized stats source logger for frontend integration
+        # Setup logging using the module's logger
         self.logger = stats_source_logger
+        
+        # Experiment context - set by experiment runner
+        self.experiment_id: Optional[int] = None
+        
+    def set_experiment_context(self, experiment_id: int) -> None:
+        """Set the experiment ID for document association."""
+        self.experiment_id = experiment_id
+        self.logger.debug(f"Set experiment context to experiment ID {experiment_id}")
     
     def _legacy_to_settings(self, legacy_config: StatsSourceLegacyConfig) -> StatsSourceSettings:
         """Convert legacy config to new settings format."""

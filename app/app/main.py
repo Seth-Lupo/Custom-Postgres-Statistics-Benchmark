@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from .database import create_db_and_tables, init_db, get_db
-from .routers import upload, run, results
+from .routers import upload, run, results, document_routes
 from sqlmodel import select, Session
 from .models import Experiment
 from markdown_it import MarkdownIt
@@ -28,8 +28,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="PostgreSQL Statistics Benchmarking Platform",
-    description="A platform for benchmarking PostgreSQL query performance with different statistics sources",
+    title="PostgreSQL Statistics Estimator",
+    description="A web application for testing different PostgreSQL statistics estimation methods",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -38,9 +38,10 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers
-app.include_router(upload.router, tags=["upload"])
-app.include_router(run.router, tags=["experiment"])
-app.include_router(results.router, tags=["results"])
+app.include_router(upload.router)
+app.include_router(run.router)
+app.include_router(results.router)
+app.include_router(document_routes.router)
 
 
 @app.get("/readme", response_class=HTMLResponse)

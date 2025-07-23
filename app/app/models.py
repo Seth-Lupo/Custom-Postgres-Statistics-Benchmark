@@ -29,8 +29,9 @@ class Experiment(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_executed: bool = Field(default=False)
     
-    # Relationship to trials
+    # Relationship to trials and documents
     trials: List["Trial"] = Relationship(back_populates="experiment")
+    documents: List["Document"] = Relationship(back_populates="experiment")
 
 
 class Trial(SQLModel, table=True):
@@ -44,4 +45,22 @@ class Trial(SQLModel, table=True):
     pg_statistic_snapshot: Optional[str] = Field(default=None)  # JSON string of pg_statistic data
     
     # Relationship to experiment
-    experiment: Optional[Experiment] = Relationship(back_populates="trials") 
+    experiment: Optional[Experiment] = Relationship(back_populates="trials")
+
+
+class Document(SQLModel, table=True):
+    """Document model for storing API responses and other experiment-related files."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    experiment_id: int = Field(foreign_key="experiment.id")
+    name: str = Field(max_length=200)  # User-friendly name
+    filename: str = Field(max_length=200)  # Original filename or generated name
+    content_type: str = Field(max_length=100)  # e.g., 'text/plain', 'text/csv', 'application/json'
+    document_type: str = Field(max_length=50)  # e.g., 'api_response', 'user_upload', 'system_log'
+    content: str  # The actual document content
+    size_bytes: int = Field(default=0)  # Size of the content in bytes
+    source: Optional[str] = Field(default=None, max_length=200)  # Source description (e.g., 'AI API Response', 'User Upload')
+    extra_metadata: Optional[str] = Field(default=None)  # JSON string for additional metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationship to experiment
+    experiment: Optional[Experiment] = Relationship(back_populates="documents") 
