@@ -19,9 +19,9 @@ epsilon: 0.1
 
 # PostgreSQL Statistics Configuration
 target_columns:
-  stanullfrac: 3    # null fraction column index
-  stadistinct: 5    # distinct values column index  
-  stanumbers1: 21   # statistical numbers array column index
+  stanullfrac: 3    # null fraction column index (position 3 in pg_statistic)
+  stadistinct: 5    # distinct values column index (position 5 in pg_statistic)
+  stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic, NOT 21!)
 
 # Prompts - Updated for better CSV compatibility
 system_prompt: "You are an old sailor."

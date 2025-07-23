@@ -52,7 +52,7 @@ Formats prompts and calls the AI API through `reference.generate()`
 Updates specific columns in pg_statistic table:
 - `stanullfrac` (column 3): null fraction
 - `stadistinct` (column 5): distinct values count
-- `stanumbers1` (column 21): statistical numbers array
+- `stanumbers1` (column 16): statistical numbers array
 
 ## Usage Example
 

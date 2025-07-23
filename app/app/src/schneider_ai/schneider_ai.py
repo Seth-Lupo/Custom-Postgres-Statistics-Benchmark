@@ -2,6 +2,7 @@ import json
 import sys
 import os
 import csv
+import logging
 from io import StringIO
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
@@ -13,13 +14,16 @@ import requests
 from pprint import pprint
 from ..base import StatsSource, StatsSourceConfig, StatsSourceSettings
 
+# Advanced logging flag for debugging pg_statistic array issues
+ADVANCED_LOGGING = True
+
 
 class SchneiderAIStatsSource(StatsSource):
     """Statistics source that uses AI to estimate PostgreSQL statistics via API."""
     
     def __init__(self, settings: StatsSourceSettings = None, config: StatsSourceConfig = None):
         super().__init__(settings=settings, config=config)
-        self.logger.info(f"Initialized {self.name()} with settings: {self.settings.name}, config: {self.config.name}")
+        self.logger.debug(f"Initialized {self.name()} with settings: {self.settings.name}, config: {self.config.name}")
         
         # Initialize API configuration from config
         self.api_endpoint = self.config.get_data('api_endpoint', 'https://a061igc186.execute-api.us-east-1.amazonaws.com/dev')
@@ -37,12 +41,24 @@ class SchneiderAIStatsSource(StatsSource):
         self.num_iterations = self.config.get_data('num_iterations', 10)
         self.epsilon = self.config.get_data('epsilon', 0.1)
         
-        # Column mappings - exact match from generator files
+        # Column mappings for pg_statistic table
+        # NOTE: AI generates pg_stats format (human-readable) but we write to pg_statistic (raw catalog)
+        # pg_stats is a VIEW that presents pg_statistic data in user-friendly format
+        # Column positions are 0-indexed in the pg_statistic table structure
         self.target_columns = self.config.get_data('target_columns', {
-            'stanullfrac': 3,    # null_frac
-            'stadistinct': 5,    # n_distinct  
-            'stanumbers1': 21    # statistical numbers array
+            'stanullfrac': 3,    # Maps to pg_stats.null_frac - position 3 in pg_statistic
+            'stadistinct': 5,    # Maps to pg_stats.n_distinct - position 5 in pg_statistic  
+            'stanumbers1': 16    # Maps to pg_stats.most_common_freqs/correlation - position 16 in pg_statistic
         })
+        
+        # Validate column mappings against PostgreSQL pg_statistic structure
+        valid_positions = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+        for col_name, position in self.target_columns.items():
+            if position not in valid_positions:
+                self.logger.warning(f"Invalid pg_statistic position {position} for column {col_name}")
+                
+        # Log the mapping for debugging
+        self.logger.debug(f"Using pg_statistic column mappings: {self.target_columns}")
         
         # Prompts - matching generator approach
         self.system_prompt = self.config.get_data('system_prompt', 
@@ -101,7 +117,7 @@ class SchneiderAIStatsSource(StatsSource):
             result = session.execute(text(copy_public_namespace_stat_query))
             rows = result.fetchall()
             
-            self.logger.info(f"Retrieved {len(rows)} pg_statistic rows from public namespace")
+            self.logger.debug(f"Retrieved {len(rows)} pg_statistic rows from public namespace")
             return rows
         except Exception as e:
             self.logger.error(f"Failed to retrieve pg_statistic rows: {str(e)}")
@@ -110,7 +126,7 @@ class SchneiderAIStatsSource(StatsSource):
     def _test_api_connection(self):
         """Test the API connection to ensure it's working before making estimation calls."""
         try:
-            self.logger.info("🧪 Testing API connection...")
+            self.logger.debug("Testing API connection...")
             
             # Try a simple health check or model info request
             headers = {
@@ -128,8 +144,7 @@ class SchneiderAIStatsSource(StatsSource):
                 "session_id": "test_connection"
             }
             
-            self.logger.info(f"Testing connection to: {self.api_endpoint}")
-            self.logger.info(f"Using API key: {self.api_key[:20]}...{self.api_key[-10:]}")
+            self.logger.debug(f"Testing connection to: {self.api_endpoint}")
             
             response = requests.post(
                 self.api_endpoint,
@@ -139,29 +154,19 @@ class SchneiderAIStatsSource(StatsSource):
             )
             
             if response.status_code == 200:
-                self.logger.info(f"✅ API connection successful! Status: {response.status_code}")
-                try:
-                    response_data = response.json()
-                    self.logger.info(f"Test response: {response_data}")
-                except:
-                    self.logger.info(f"Test response (raw): {response.text}")
+                self.logger.debug(f"API connection successful. Status: {response.status_code}")
             else:
-                self.logger.warning(f"⚠️ API connection test returned status {response.status_code}: {response.reason}")
-                self.logger.warning(f"Response: {response.text}")
+                self.logger.warning(f"API connection test returned status {response.status_code}: {response.reason}")
                 
         except requests.RequestException as e:
-            self.logger.error(f"❌ API connection test failed: {str(e)}")
-            self.logger.error(f"Connection details: endpoint={self.api_endpoint}, "
-                            f"api_key_length={len(self.api_key)}")
-            self.logger.error(f"Exception details:", exc_info=True)
+            self.logger.error(f"API connection test failed: {str(e)}")
         except Exception as e:
-            self.logger.error(f"❌ Unexpected error during API connection test: {str(e)}")
-            self.logger.error(f"Exception details:", exc_info=True)
+            self.logger.error(f"Unexpected error during API connection test: {str(e)}", exc_info=True)
     
     def get_database_schema_info(self, session: Session) -> Dict[str, Any]:
         """Get comprehensive database schema information for AI estimation."""
         try:
-            self.logger.info("Starting comprehensive database schema analysis...")
+            self.logger.debug("Starting database schema analysis...")
             
             # Get table and column information with better PostgreSQL-specific queries
             self.logger.debug("Executing schema information query...")
@@ -185,7 +190,7 @@ class SchneiderAIStatsSource(StatsSource):
             
             result = session.execute(text(schema_query))
             schema_rows = result.fetchall()
-            self.logger.info(f"Retrieved {len(schema_rows)} column definitions from information_schema")
+            self.logger.debug(f"Retrieved {len(schema_rows)} column definitions")
             
             # Get table comments
             self.logger.debug("Retrieving table comments...")
@@ -259,12 +264,7 @@ class SchneiderAIStatsSource(StatsSource):
                 stats_result = session.execute(text(table_stats_query))
                 table_stats = {row[1]: dict(zip(['schema', 'table', 'inserts', 'updates', 'deletes', 'live_tuples', 'dead_tuples'], row)) 
                               for row in stats_result.fetchall()}
-                self.logger.info(f"Retrieved statistics for {len(table_stats)} tables")
-                
-                # Log detailed table stats
-                for table_name, stats in table_stats.items():
-                    self.logger.debug(f"Table {table_name}: {stats['live_tuples']} live tuples, "
-                                    f"{stats['inserts']} inserts, {stats['updates']} updates, {stats['deletes']} deletes")
+                self.logger.debug(f"Retrieved statistics for {len(table_stats)} tables")
                 
             except Exception as e:
                 self.logger.warning(f"Could not get table statistics: {str(e)}, using fallback approach")
@@ -286,7 +286,7 @@ class SchneiderAIStatsSource(StatsSource):
                 stats_result = session.execute(text(basic_table_query))
                 table_stats = {row[1]: dict(zip(['schema', 'table', 'inserts', 'updates', 'deletes', 'live_tuples', 'dead_tuples'], row)) 
                               for row in stats_result.fetchall()}
-                self.logger.info(f"Retrieved fallback statistics for {len(table_stats)} tables")
+                self.logger.debug(f"Retrieved fallback statistics for {len(table_stats)} tables")
             
             # Get table sizes using a more compatible approach
             self.logger.debug("Retrieving table sizes...")
@@ -305,9 +305,7 @@ class SchneiderAIStatsSource(StatsSource):
             table_sizes = {row[0]: {'size_pretty': row[1], 'size_bytes': row[2]} 
                           for row in size_result.fetchall()}
             
-            self.logger.info(f"Retrieved size information for {len(table_sizes)} tables")
-            for table_name, size_info in table_sizes.items():
-                self.logger.debug(f"Table {table_name}: {size_info['size_pretty']} ({size_info['size_bytes']} bytes)")
+            self.logger.debug(f"Retrieved size information for {len(table_sizes)} tables")
             
             # Get database size
             self.logger.debug("Retrieving database size...")
@@ -316,10 +314,10 @@ class SchneiderAIStatsSource(StatsSource):
             db_size_row = db_size_result.fetchone()
             db_size = db_size_row[0] if db_size_row else 'unknown'
             db_size_bytes = db_size_row[1] if db_size_row else 0
-            self.logger.info(f"Database size: {db_size} ({db_size_bytes} bytes)")
+            self.logger.debug(f"Database size: {db_size}")
             
             # Organize schema information with enhanced data
-            self.logger.info("Organizing schema information and collecting sample data...")
+            self.logger.debug("Organizing schema information...")
             tables = {}
             for row in schema_rows:
                 table_name = row[0]
@@ -338,8 +336,7 @@ class SchneiderAIStatsSource(StatsSource):
                         'comment': table_comment if table_comment else None
                     }
                     
-                    self.logger.debug(f"Initialized table {table_name}: {stats.get('live_tuples', 0)} rows, "
-                                    f"size {sizes.get('size_pretty', 'unknown')}")
+                    # Skip detailed per-table logging
                 
                 # Enhanced column information
                 column_comment = column_comments.get(table_name, {}).get(row[1], '')
@@ -360,10 +357,7 @@ class SchneiderAIStatsSource(StatsSource):
                 if sample_data:
                     column_info['sample_values'] = sample_data
                     column_info['sample_stats'] = self._analyze_sample_data(sample_data, row[2])
-                    self.logger.debug(f"Column {table_name}.{row[1]}: {len(sample_data)} sample values, "
-                                    f"data type {row[2]}")
-                else:
-                    self.logger.debug(f"Column {table_name}.{row[1]}: no sample data available")
+                    # Skip per-column logging
                 
                 tables[table_name]['columns'].append(column_info)
             
@@ -377,17 +371,11 @@ class SchneiderAIStatsSource(StatsSource):
             }
             
             self.logger.info(f"Schema analysis complete: {schema_summary['total_tables']} tables, "
-                           f"{schema_summary['total_columns']} columns, database size {db_size}")
-            
-            # Log table-by-table summary
-            for table_name, table_info in tables.items():
-                self.logger.info(f"Table {table_name}: {len(table_info['columns'])} columns, "
-                               f"{table_info['row_count']} rows, {table_info['table_size']}")
+                           f"{schema_summary['total_columns']} columns")
             
             return schema_summary
         except Exception as e:
-            self.logger.error(f"Failed to get database schema info: {str(e)}")
-            self.logger.debug(f"Schema info error details", exc_info=True)
+            self.logger.error(f"Failed to get database schema info: {str(e)}", exc_info=True)
             return {}
     
     def get_sample_data(self, session: Session, table_name: str, limit: int = 5) -> List[Dict]:
@@ -405,11 +393,11 @@ class SchneiderAIStatsSource(StatsSource):
     
     def estimate_statistics_with_ai(self, schema_info: Dict[str, Any]) -> Dict[str, Any]:
         """Use AI to estimate PostgreSQL statistics with retry logic."""
-        self.logger.info(f"Starting AI estimation process with {self.max_retries} max retries")
+        self.logger.debug(f"Starting AI estimation process with {self.max_retries} max retries")
         
         for attempt in range(self.max_retries):
             try:
-                self.logger.info(f"AI estimation attempt {attempt + 1}/{self.max_retries}")
+                self.logger.debug(f"AI estimation attempt {attempt + 1}/{self.max_retries}")
                 
                 # Create a detailed but concise summary for the AI
                 self.logger.debug("Building tables summary for AI prompt...")
@@ -461,79 +449,30 @@ class SchneiderAIStatsSource(StatsSource):
                     sample_data=json.dumps(tables_summary, indent=2, default=str)
                 )
                 
-                self.logger.info(f"Prepared AI prompt: {len(col_names_list)} columns, "
-                               f"{total_sample_values} total sample values")
-                self.logger.info(f"AI prompt length: {len(formatted_prompt)} characters")
-                self.logger.debug(f"Column names for AI: {', '.join(col_names_list[:10])}...")  # Show first 10
+                self.logger.debug(f"Prepared AI prompt: {len(col_names_list)} columns, "
+                               f"prompt length: {len(formatted_prompt)} characters")  # Show first 10
                 
-                # Log the full prompt for debugging - at INFO level so it's always visible
-                self.logger.info(f"=== FULL AI PROMPT ===")
-                self.logger.info(f"System prompt: {self.system_prompt}")
-                self.logger.info(f"User prompt: {formatted_prompt}")
-                self.logger.info(f"=== END AI PROMPT ===")
+                # Only log prompt on error
                 
-                self.logger.info(f"Requesting AI estimation via API (attempt {attempt + 1}/{self.max_retries})")
-                self.logger.info(f"Using model: {self.model}, temperature: {self.temperature}, "
-                               f"endpoint: {self.api_endpoint}")
+                self.logger.debug(f"Requesting AI estimation via API (attempt {attempt + 1}/{self.max_retries})")
                 
-                # Verify API configuration before API call
-                self.logger.info(f"API endpoint: {self.api_endpoint}")
-                self.logger.info(f"API key: {self.api_key[:20]}...{self.api_key[-10:]}")
+                # Skip detailed API parameter logging
                 
-                # Log the API request parameters
-                api_params = {
-                    'model': self.model,
-                    'system': self.system_prompt[:100] + "..." if len(self.system_prompt) > 100 else self.system_prompt,
-                    'query_length': len(formatted_prompt),
-                    'temperature': self.temperature,
-                    'session_id': self.session_id,
-                    'rag_threshold': self.rag_threshold,
-                    'rag_usage': self.rag_usage,
-                    'rag_k': self.rag_k
-                }
-                self.logger.info(f"API request parameters: {api_params}")
-                
-                # Add detailed prompt analysis
+                # Add prompt size check
                 total_prompt_length = len(self.system_prompt) + len(formatted_prompt)
-                self.logger.info(f"📏 Prompt analysis:")
-                self.logger.info(f"   System prompt: {len(self.system_prompt)} chars")
-                self.logger.info(f"   User prompt: {len(formatted_prompt)} chars")
-                self.logger.info(f"   Total length: {total_prompt_length} chars")
-                
-                # Check for potential issues
-                if total_prompt_length > 100000:  # 100k chars - likely too large
-                    self.logger.warning(f"⚠️ VERY LARGE PROMPT: {total_prompt_length} chars - likely to exceed model context window")
-                elif total_prompt_length > 50000:  # 50k chars - potentially problematic
-                    self.logger.warning(f"⚠️ LARGE PROMPT: {total_prompt_length} chars - might cause issues with smaller models")
-                elif total_prompt_length > 20000:  # 20k chars - noteworthy
-                    self.logger.info(f"📋 MODERATE PROMPT: {total_prompt_length} chars - should be fine for most models")
-                else:
-                    self.logger.info(f"✅ COMPACT PROMPT: {total_prompt_length} chars - optimal size")
+                if total_prompt_length > 100000:
+                    self.logger.warning(f"Very large prompt: {total_prompt_length} chars - may exceed model context window")
+                elif total_prompt_length > 50000:
+                    self.logger.warning(f"Large prompt: {total_prompt_length} chars")
                 
                 # Check model name format and warn about known issues
                 if self.model == "4o-mini":
-                    self.logger.warning(f"⚠️ Model '4o-mini' has known issues - consider using 'us.anthropic.claude-3-haiku-20240307-v1:0'")
-                elif "claude" in self.model.lower():
-                    self.logger.info(f"✅ Using Claude model - generally reliable for CSV generation")
-                elif self.model.startswith("gpt"):
-                    self.logger.info(f"🤖 Using GPT model - verify CSV formatting")
+                    self.logger.warning(f"Model '4o-mini' has known issues - consider using 'us.anthropic.claude-3-haiku-20240307-v1:0'")
                 
-                # Sample data size analysis
-                try:
-                    sample_data_str = formatted_prompt.split('sample_data}')[0].split('{sample_data')[1] if '{sample_data' in formatted_prompt else ""
-                    if sample_data_str:
-                        sample_data_size = len(sample_data_str)
-                        self.logger.info(f"📊 Sample data size: {sample_data_size} chars")
-                        if sample_data_size > 30000:
-                            self.logger.warning(f"⚠️ Large sample data ({sample_data_size} chars) - consider reducing")
-                except:
-                    self.logger.debug("Could not analyze sample data size")
+                # Skip sample data size analysis
                 
                 # Call the AI API directly
-                self.logger.info("Making direct API call to LLM proxy...")
-                # Print API credentials before making the call
-                self.logger.info(f"🔑 API ENDPOINT: {self.api_endpoint}")
-                self.logger.info(f"🔑 API KEY: {self.api_key}")
+                self.logger.debug("Making API call to LLM proxy...")
                 
                 # Prepare the request payload
                 payload = {
@@ -552,8 +491,7 @@ class SchneiderAIStatsSource(StatsSource):
                     'request_type': 'call'
                 }
                 
-                self.logger.info(f"📤 REQUEST PAYLOAD: {json.dumps(payload, indent=2)}")
-                self.logger.info(f"📤 REQUEST HEADERS: {headers}")
+                self.logger.debug(f"Request payload size: {len(json.dumps(payload))} chars")
                 
                 # Make HTTP request
                 response = requests.post(
@@ -563,56 +501,29 @@ class SchneiderAIStatsSource(StatsSource):
                     timeout=300  # 5 minute timeout
                 )
                 
-                # Print HTTP response details
-                self.logger.info(f"📋 HTTP RESPONSE ANALYSIS:")
-                self.logger.info(f"   Status Code: {response.status_code}")
-                self.logger.info(f"   Status Text: {response.reason}")
-                self.logger.info(f"   Headers: {dict(response.headers)}")
-                self.logger.info(f"   Response Type: {type(response)}")
-                
-                # Print raw response content
+                # Check response
                 raw_content = response.text
-                self.logger.info(f"   Raw Content Length: {len(raw_content)}")
-                self.logger.info(f"   Raw Content: {raw_content}")
+                self.logger.debug(f"HTTP response: {response.status_code} - {len(raw_content)} chars")
                 
                 # Check if the request was successful
                 if response.status_code != 200:
-                    self.logger.error(f"❌ HTTP request failed with status {response.status_code}: {response.reason}")
+                    self.logger.error(f"HTTP request failed with status {response.status_code}: {response.reason}")
                     self.logger.error(f"Error response content: {raw_content}")
                     # Continue to the next retry
                     if attempt < self.max_retries - 1:
-                        self.logger.info(f"HTTP request failed, retrying in 2 seconds...")
+                        self.logger.debug(f"HTTP request failed, retrying in 2 seconds...")
                         time.sleep(2)
                     continue
                 
-                self.logger.info("✅ HTTP request successful")
+                self.logger.debug("HTTP request successful")
                 
                 # Try to parse JSON response
                 try:
                     response_data = response.json()
-                    self.logger.info(f"📋 PARSED JSON RESPONSE:")
-                    self.logger.info(f"   Type: {type(response_data)}")
-                    
-                    # Print the entire response object
-                    self.logger.info("🔍 COMPLETE RESPONSE OBJECT:")
-                    self.logger.info(json.dumps(response_data, indent=2))
-                   
-                    
-                    if isinstance(response_data, dict):
-                        self.logger.info(f"   Dictionary keys: {list(response_data.keys())}")
-                        for key, value in response_data.items():
-                            value_str = str(value) if len(str(value)) <= 200 else str(value)[:200] + "..."
-                            self.logger.info(f"   {key}: {type(value)} = {value_str}")
-                    else:
-                        self.logger.info(f"   Content: {response_data}")
-                        
-                    # Use the parsed response data for further processing
+                    self.logger.debug(f"Parsed JSON response with keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'non-dict'}")
                     response = response_data
-                    
                 except json.JSONDecodeError as je:
-                    self.logger.error(f"❌ Failed to parse JSON response: {je}")
-                    self.logger.error(f"Raw response content: {raw_content}")
-                    # Use the raw text as response
+                    self.logger.debug(f"Failed to parse JSON response: {je}")
                     response = raw_content
                 
                 # Process the response
@@ -620,45 +531,31 @@ class SchneiderAIStatsSource(StatsSource):
                 
                 # Extract AI response based on format
                 if isinstance(response, dict) and 'response' in response:
-                    # Standard JSON format with 'response' key
                     ai_response = response['response']
-                    self.logger.info(f"Successfully received AI estimation response from JSON (length: {len(ai_response)} chars)")
+                    self.logger.debug(f"Received AI response from JSON (length: {len(ai_response)} chars)")
                 elif isinstance(response, str) and (';' in response or ',' in response):
-                    # Plain text CSV response - this is valid, not an error
                     ai_response = response
-                    self.logger.info(f"Successfully received AI estimation response as plain text CSV (length: {len(ai_response)} chars)")
+                    self.logger.debug(f"Received AI response as plain text CSV (length: {len(ai_response)} chars)")
                 elif isinstance(response, dict):
                     # JSON response with different structure - try common keys
                     self.logger.warning(f"Response is JSON but missing 'response' key. Keys found: {list(response.keys())}")
                     for key in ['data', 'result', 'content', 'text', 'body', 'output']:
                         if key in response and response[key]:
                             ai_response = response[key]
-                            self.logger.info(f"Found response in '{key}' field (length: {len(str(ai_response))} chars)")
+                            self.logger.debug(f"Found response in '{key}' field (length: {len(str(ai_response))} chars)")
                             break
                 
                 if ai_response:
-                    # Log the full AI response for debugging - always at INFO level so it's visible
-                    self.logger.info(f"=== FULL AI RESPONSE ===")
-                    self.logger.info(ai_response)
-                    self.logger.info(f"=== END AI RESPONSE ===")
+                    self.logger.debug(f"Processing AI response ({len(ai_response)} chars)")
                     
                     # Post-process the response (matches generator approach)
-                    self.logger.debug("Post-processing AI response...")
                     processed_response = self._post_process_ai_response(ai_response)
                     
                     # Parse and validate the response
-                    self.logger.debug("Parsing AI response...")
                     parsed_estimates = self._parse_ai_response(processed_response)
                     if parsed_estimates:
                         self.logger.info(f"Successfully parsed estimates for {len(parsed_estimates)} tables")
                         
-                        # Log parsed data details
-                        for table_name, table_estimates in parsed_estimates.items():
-                            self.logger.debug(f"Table {table_name}: {len(table_estimates)} column estimates")
-                            for col_name, col_stats in table_estimates.items():
-                                self.logger.debug(f"  {col_name}: {list(col_stats.keys())}")
-                        
-                        self.logger.debug("Validating AI estimates...")
                         validated_estimates = self._validate_ai_estimates(parsed_estimates, schema_info)
                         if validated_estimates:
                             total_validated = sum(len(t) for t in validated_estimates.values())
@@ -666,56 +563,67 @@ class SchneiderAIStatsSource(StatsSource):
                                            f"across {len(validated_estimates)} tables")
                             return validated_estimates
                         else:
-                            self.logger.error("❌ AI estimates failed validation - no valid estimates found")
-                            self.logger.error("DEBUGGING: Parsed estimates that failed validation:")
-                            self.logger.error(f"{parsed_estimates}")
+                            self.logger.error("AI estimates failed validation - no valid estimates found")
+                            # Log full context on error
+                            self.logger.error(f"Full AI prompt that failed:")
+                            self.logger.error(f"System: {self.system_prompt}")
+                            self.logger.error(f"User: {formatted_prompt}")
+                            self.logger.error(f"AI Response: {ai_response}")
+                            if self.logger.isEnabledFor(logging.DEBUG):
+                                self.logger.debug(f"Parsed estimates that failed validation: {parsed_estimates}")
                     else:
-                        self.logger.error("❌ Failed to parse AI response - no estimates extracted")
-                        self.logger.error("DEBUGGING: Post-processed response that failed to parse:")
-                        self.logger.error(f"'{processed_response}'")
-                        self.logger.error("DEBUGGING: Original AI response that failed to parse:")
-                        self.logger.error(f"=== FAILED AI RESPONSE ===")
-                        self.logger.error(ai_response)
-                        self.logger.error(f"=== END FAILED AI RESPONSE ===")
+                        self.logger.error("Failed to parse AI response - no estimates extracted")
+                        # Log full context on error
+                        self.logger.error(f"Full AI prompt that failed:")
+                        self.logger.error(f"System: {self.system_prompt}")
+                        self.logger.error(f"User: {formatted_prompt}")
+                        self.logger.error(f"AI Response: {ai_response}")
+                        if self.logger.isEnabledFor(logging.DEBUG):
+                            self.logger.debug(f"Post-processed response that failed to parse: '{processed_response}'")
+                            self.logger.debug(f"Original AI response that failed to parse: {ai_response}")
                 elif isinstance(response, str):
                     # Plain text that doesn't look like CSV - likely an error message
-                    self.logger.error(f"🚨 AI API returned unexpected plain text (not CSV format): {response[:200]}...")
-                    self.logger.error("DEBUGGING: Full response:")
-                    self.logger.error(f"=== PLAIN TEXT RESPONSE ===")
-                    self.logger.error(response)
-                    self.logger.error(f"=== END PLAIN TEXT RESPONSE ===")
+                    self.logger.error(f"AI API returned unexpected plain text (not CSV format): {response[:200]}...")
+                    # Log full context on error
+                    self.logger.error(f"Full AI prompt that failed:")
+                    self.logger.error(f"System: {self.system_prompt}")
+                    self.logger.error(f"User: {formatted_prompt}")
+                    if self.logger.isEnabledFor(logging.DEBUG):
+                        self.logger.debug(f"Full response: {response}")
                 else:
                     # Completely unexpected response type
-                    self.logger.error(f"🚨 Unexpected AI response type: {type(response)}")
-                    self.logger.error(f"Response: {str(response)[:200]}...")
-                    self.logger.error(f"=== UNEXPECTED RESPONSE ===")
-                    self.logger.error(f"{response}")
-                    self.logger.error(f"=== END UNEXPECTED RESPONSE ===")
+                    self.logger.error(f"Unexpected AI response type: {type(response)}")
+                    # Log full context on error
+                    self.logger.error(f"Full AI prompt that failed:")
+                    self.logger.error(f"System: {self.system_prompt}")
+                    self.logger.error(f"User: {formatted_prompt}")
+                    if self.logger.isEnabledFor(logging.DEBUG):
+                        self.logger.debug(f"Response: {response}")
                 
                 # If we got here, this attempt failed - continue to next attempt
                 if attempt < self.max_retries - 1:
-                    self.logger.info(f"Retrying AI estimation in 2 seconds...")
+                    self.logger.debug(f"Retrying AI estimation in 2 seconds...")
                     time.sleep(2)
                     
             except requests.RequestException as req_error:
-                self.logger.error(f"💥 HTTP REQUEST FAILED: {str(req_error)}")
-                self.logger.error(f"Request exception type: {type(req_error).__name__}")
-                self.logger.error(f"Exception details:", exc_info=True)
+                self.logger.error(f"HTTP request failed: {str(req_error)}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Request exception type: {type(req_error).__name__}", exc_info=True)
                 
                 # Continue to the next retry
                 if attempt < self.max_retries - 1:
-                    self.logger.info(f"HTTP request failed, retrying in 2 seconds...")
+                    self.logger.debug(f"HTTP request failed, retrying in 2 seconds...")
                     time.sleep(2)
                 continue
                 
             except Exception as e:
-                self.logger.error(f"💥 UNEXPECTED ERROR: {str(e)}")
-                self.logger.error(f"Exception type: {type(e).__name__}")
-                self.logger.error(f"Exception details:", exc_info=True)
+                self.logger.error(f"Unexpected error: {str(e)}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Exception type: {type(e).__name__}", exc_info=True)
                 
                 # Continue to the next retry
                 if attempt < self.max_retries - 1:
-                    self.logger.info(f"Unexpected error, retrying in 2 seconds...")
+                    self.logger.debug(f"Unexpected error, retrying in 2 seconds...")
                     time.sleep(2)
                 continue
         
@@ -979,6 +887,10 @@ class SchneiderAIStatsSource(StatsSource):
             total_estimates = sum(len(table_estimates) for table_estimates in estimates.values())
             self.logger.info(f"Applying {total_estimates} AI estimates to pg_statistic table")
             
+            # Don't clear statistics - instead we'll update existing rows or insert new ones
+            # This approach is more compatible with PostgreSQL's pg_statistic structure
+            self.logger.info("Preparing to update existing statistics...")
+            
             # Get current pg_statistic rows (matches getStatRows approach)
             self.logger.debug("Retrieving current pg_statistic rows...")
             current_rows = self.get_pg_statistic_rows(session)
@@ -991,7 +903,7 @@ class SchneiderAIStatsSource(StatsSource):
                     self.logger.warning(f"Invalid table estimates format for {table_name}")
                     continue
                 
-                self.logger.debug(f"Processing {len(table_estimates)} estimates for table {table_name}")
+                # Skip per-table processing logs
                 
                 for column_name, column_stats in table_estimates.items():
                     if not isinstance(column_stats, dict):
@@ -1000,32 +912,85 @@ class SchneiderAIStatsSource(StatsSource):
                     
                     # Apply estimates to the three target columns from generator
                     for stat_name, stat_value in column_stats.items():
+                        if ADVANCED_LOGGING:
+                            self.logger.info(f"🔍 ADVANCED_LOG: Processing stat {stat_name}={stat_value} (type: {type(stat_value)}) for {table_name}.{column_name}")
+                        
                         if stat_name in self.target_columns:
                             col_idx = self.target_columns[stat_name]
                             
-                            # Handle array values for stanumbers1 (column 21)
-                            original_value = stat_value
-                            if col_idx == 21 and isinstance(stat_value, list):
-                                # Convert array to PostgreSQL array format
-                                if stat_value:
-                                    pg_array = '{' + ','.join(str(v) for v in stat_value) + '}'
-                                    self.logger.debug(f"Converted array {stat_value} to PostgreSQL format: {pg_array}")
-                                else:
-                                    pg_array = None
-                                stat_value = pg_array
+                            if ADVANCED_LOGGING:
+                                self.logger.info(f"🔍 ADVANCED_LOG: Found target column {stat_name} -> column index {col_idx}")
                             
-                            self.logger.debug(f"Applying {stat_name} (column {col_idx}) = {stat_value} "
-                                            f"to {table_name}.{column_name}")
+                            # Handle array values for stanumbers1 (column 16) and other array columns
+                            original_value = stat_value
+                            original_type = type(stat_value)
+                            
+                            if col_idx == 16 and isinstance(stat_value, list):
+                                if ADVANCED_LOGGING:
+                                    self.logger.info(f"🔍 ADVANCED_LOG: Processing array for stanumbers1 (col 16): {stat_value}")
+                                
+                                # Convert Python list to PostgreSQL array format
+                                if stat_value:
+                                    # For stanumbers1 (float4[]), PostgreSQL system catalogs need string format
+                                    try:
+                                        # Ensure all values are numeric
+                                        numeric_values = [float(v) for v in stat_value]
+                                        # Format as PostgreSQL array literal string
+                                        stat_value = '{' + ','.join(str(v) for v in numeric_values) + '}'
+                                        
+                                        if ADVANCED_LOGGING:
+                                            self.logger.info(f"🔍 ADVANCED_LOG: Converted array {original_value} -> {stat_value}")
+                                            self.logger.info(f"🔍 ADVANCED_LOG: Array conversion: {original_type} -> {type(stat_value)}")
+                                            
+                                        self.logger.debug(f"Converted array {original_value} to PostgreSQL array string: {stat_value}")
+                                    except (ValueError, TypeError) as e:
+                                        if ADVANCED_LOGGING:
+                                            self.logger.error(f"🔍 ADVANCED_LOG: Array conversion failed: {e}")
+                                        self.logger.error(f"Failed to convert array values {original_value} to numeric: {e}")
+                                        stat_value = None
+                                else:
+                                    if ADVANCED_LOGGING:
+                                        self.logger.info(f"🔍 ADVANCED_LOG: Empty array, setting to None")
+                                    stat_value = None
+                            elif isinstance(stat_value, list):
+                                if ADVANCED_LOGGING:
+                                    self.logger.info(f"🔍 ADVANCED_LOG: Unexpected array for column {col_idx}: {stat_value}")
+                                
+                                # Handle other potential array columns - convert to appropriate format
+                                self.logger.debug(f"Array value for column {col_idx}: {stat_value}")
+                                # For other array columns, also keep as Python list
+                                try:
+                                    stat_value = [float(v) for v in stat_value]
+                                except (ValueError, TypeError):
+                                    stat_value = None
+                            
+                            if ADVANCED_LOGGING:
+                                self.logger.info(f"🔍 ADVANCED_LOG: About to call _update_pg_statistic_column:")
+                                self.logger.info(f"🔍 ADVANCED_LOG:   table_name={table_name}")
+                                self.logger.info(f"🔍 ADVANCED_LOG:   column_name={column_name}")
+                                self.logger.info(f"🔍 ADVANCED_LOG:   col_idx={col_idx}")
+                                self.logger.info(f"🔍 ADVANCED_LOG:   stat_value={stat_value} (type: {type(stat_value)})")
+                                self.logger.info(f"🔍 ADVANCED_LOG:   original_value={original_value} (type: {original_type})")
+                            
+                            # Skip per-statistic logs
                             
                             success = self._update_pg_statistic_column(
                                 session, table_name, column_name, col_idx, stat_value
                             )
+                            if ADVANCED_LOGGING:
+                                self.logger.info(f"🔍 ADVANCED_LOG: _update_pg_statistic_column returned: {success}")
+                            
                             if success:
                                 applied_count += 1
-                                self.logger.info(f"✓ Applied {stat_name}={original_value} to {table_name}.{column_name}")
+                                applied_count += 1
+                                self.logger.debug(f"Applied {stat_name}={original_value} to {table_name}.{column_name}")
+                                if ADVANCED_LOGGING:
+                                    self.logger.info(f"🔍 ADVANCED_LOG: ✅ SUCCESS: Applied {stat_name}={original_value} to {table_name}.{column_name}")
                             else:
                                 failed_count += 1
-                                self.logger.warning(f"✗ Failed to apply {stat_name} to {table_name}.{column_name}")
+                                self.logger.debug(f"Failed to apply {stat_name} to {table_name}.{column_name}")
+                                if ADVANCED_LOGGING:
+                                    self.logger.error(f"🔍 ADVANCED_LOG: ❌ FAILED: Could not apply {stat_name}={original_value} to {table_name}.{column_name}")
                         else:
                             self.logger.debug(f"Skipping unsupported statistic: {stat_name}")
             
@@ -1036,6 +1001,117 @@ class SchneiderAIStatsSource(StatsSource):
             self.logger.error(f"Failed to apply AI statistics: {str(e)}")
             return False
     
+    def _clear_pg_statistics_for_tables(self, session: Session, table_names: List[str]) -> None:
+        """Clear existing pg_statistic entries for specific tables."""
+        try:
+            for table_name in table_names:
+                self.logger.debug(f"Clearing pg_statistic entries for table {table_name}")
+                
+                # Get the table OID
+                oid_query = '''
+                SELECT c.oid 
+                FROM pg_class c 
+                JOIN pg_namespace n ON n.oid = c.relnamespace 
+                WHERE c.relname = :table_name AND n.nspname = 'public'
+                '''
+                result = session.execute(text(oid_query), {"table_name": table_name}).fetchone()
+                if not result:
+                    self.logger.warning(f"Table {table_name} not found for clearing statistics")
+                    continue
+                
+                table_oid = result[0]
+                
+                # Clear statistics for this table
+                clear_query = '''
+                DELETE FROM pg_statistic 
+                WHERE starelid = :table_oid AND stainherit = false
+                '''
+                session.execute(text(clear_query), {"table_oid": table_oid})
+                self.logger.debug(f"Cleared pg_statistic entries for table {table_name} (OID: {table_oid})")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to clear pg_statistic entries: {str(e)}")
+            raise
+
+    def _insert_pg_statistic_row(self, session: Session, table_oid: int, attnum: int, col_idx: int, value: Any) -> None:
+        """Insert a new row into pg_statistic with minimal required fields."""
+        try:
+            # Create a basic pg_statistic row with defaults
+            insert_query = '''
+            INSERT INTO pg_statistic (
+                starelid, staattnum, stainherit, stanullfrac, stawidth, stadistinct, 
+                stakind1, stakind2, stakind3, stakind4, stakind5,
+                staop1, staop2, staop3, staop4, staop5,
+                stacoll1, stacoll2, stacoll3, stacoll4, stacoll5,
+                stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
+                stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
+            ) VALUES (
+                :table_oid, :attnum, false, :stanullfrac, :stawidth, :stadistinct,
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                :stanumbers1, NULL, NULL, NULL, NULL,
+                NULL, NULL, NULL, NULL, NULL
+            )
+            '''
+            
+            # Set the specific value based on column index
+            if col_idx == 3:  # stanullfrac
+                stanullfrac = value
+                stawidth = 4  # default
+                stadistinct = 0  # default
+                stanumbers1 = None
+            elif col_idx == 5:  # stadistinct
+                stanullfrac = 0  # default
+                stawidth = 4  # default
+                stadistinct = value
+                stanumbers1 = None
+            elif col_idx == 16:  # stanumbers1
+                stanullfrac = 0  # default
+                stawidth = 4  # default
+                stadistinct = 0  # default
+                # Value should already be converted to string format by this point
+                stanumbers1 = value
+            else:
+                self.logger.warning(f"Unsupported column index for insert: {col_idx}")
+                return
+            
+            # Log the insert parameters for debugging
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: ===== ABOUT TO EXECUTE INSERT =====")
+                self.logger.info(f"🔍 ADVANCED_LOG: Insert query: {insert_query}")
+                self.logger.info(f"🔍 ADVANCED_LOG: Insert parameters:")
+                self.logger.info(f"🔍 ADVANCED_LOG:   table_oid={table_oid} (type: {type(table_oid)})")
+                self.logger.info(f"🔍 ADVANCED_LOG:   attnum={attnum} (type: {type(attnum)})")
+                self.logger.info(f"🔍 ADVANCED_LOG:   stanullfrac={stanullfrac} (type: {type(stanullfrac)})")
+                self.logger.info(f"🔍 ADVANCED_LOG:   stawidth={stawidth} (type: {type(stawidth)})")
+                self.logger.info(f"🔍 ADVANCED_LOG:   stadistinct={stadistinct} (type: {type(stadistinct)})")
+                self.logger.info(f"🔍 ADVANCED_LOG:   stanumbers1={stanumbers1} (type: {type(stanumbers1)})")
+            
+            self.logger.debug(f"Insert parameters: table_oid={table_oid}, attnum={attnum}, "
+                            f"stanullfrac={stanullfrac}, stawidth={stawidth}, stadistinct={stadistinct}, "
+                            f"stanumbers1={stanumbers1} (type: {type(stanumbers1)})")
+            
+            try:
+                session.execute(text(insert_query), {
+                    "table_oid": table_oid, "attnum": attnum, "stanullfrac": stanullfrac, 
+                    "stawidth": stawidth, "stadistinct": stadistinct, "stanumbers1": stanumbers1
+                })
+                if ADVANCED_LOGGING:
+                    self.logger.info(f"🔍 ADVANCED_LOG: ✅ INSERT EXECUTED SUCCESSFULLY")
+            except Exception as insert_error:
+                if ADVANCED_LOGGING:
+                    self.logger.error(f"🔍 ADVANCED_LOG: ❌ INSERT EXECUTION FAILED")
+                    self.logger.error(f"🔍 ADVANCED_LOG: Insert Error: {insert_error}")
+                    self.logger.error(f"🔍 ADVANCED_LOG: Insert Error type: {type(insert_error)}")
+                raise insert_error
+            
+            self.logger.debug(f"Inserted new pg_statistic row for column {attnum} in table {table_oid}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to insert pg_statistic row: {str(e)}")
+            raise
+
     def _update_pg_statistic_column(self, session: Session, table_name: str, 
                                   column_name: str, col_idx: int, value: Any) -> bool:
         """
@@ -1043,66 +1119,137 @@ class SchneiderAIStatsSource(StatsSource):
         Matches insert_cr_into_pg_statistic() approach from AI_Estimate.py
         """
         try:
-            self.logger.debug(f"Updating pg_statistic column {col_idx} for {table_name}.{column_name} with value: {value}")
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: ===== _update_pg_statistic_column ENTRY =====")
+                self.logger.info(f"🔍 ADVANCED_LOG: table_name={table_name}")
+                self.logger.info(f"🔍 ADVANCED_LOG: column_name={column_name}")
+                self.logger.info(f"🔍 ADVANCED_LOG: col_idx={col_idx}")
+                self.logger.info(f"🔍 ADVANCED_LOG: value={value}")
+                self.logger.info(f"🔍 ADVANCED_LOG: value type={type(value)}")
+                self.logger.info(f"🔍 ADVANCED_LOG: value repr={repr(value)}")
+            
+            self.logger.debug(f"Updating pg_statistic column {col_idx} for {table_name}.{column_name}")
             
             # First, find the OID for the table
             oid_query = '''
             SELECT c.oid FROM pg_class c 
             JOIN pg_namespace n ON c.relnamespace = n.oid 
-            WHERE c.relname = %s AND n.nspname = 'public'
+            WHERE c.relname = :table_name AND n.nspname = 'public'
             '''
-            oid_result = session.execute(text(oid_query), (table_name,))
+            
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: Executing OID query: {oid_query}")
+                self.logger.info(f"🔍 ADVANCED_LOG: OID query params: {{'table_name': table_name}}")
+            
+            oid_result = session.execute(text(oid_query), {"table_name": table_name})
             oid_row = oid_result.fetchone()
             
             if not oid_row:
+                if ADVANCED_LOGGING:
+                    self.logger.error(f"🔍 ADVANCED_LOG: Table {table_name} not found in pg_class")
                 self.logger.warning(f"Table {table_name} not found in pg_class")
                 return False
             
             table_oid = oid_row[0]
-            self.logger.debug(f"Found table OID: {table_oid} for {table_name}")
+            
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: Found table_oid={table_oid}")
             
             # Get column attribute number
             attnum_query = '''
             SELECT attnum FROM pg_attribute 
-            WHERE attrelid = %s AND attname = %s
+            WHERE attrelid = :table_oid AND attname = :column_name
             '''
-            attnum_result = session.execute(text(attnum_query), (table_oid, column_name))
+            
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: Executing attnum query: {attnum_query}")
+                self.logger.info(f"🔍 ADVANCED_LOG: attnum query params: {{'table_oid': table_oid, 'column_name': column_name}}")
+            
+            attnum_result = session.execute(text(attnum_query), {"table_oid": table_oid, "column_name": column_name})
             attnum_row = attnum_result.fetchone()
             
             if not attnum_row:
+                if ADVANCED_LOGGING:
+                    self.logger.error(f"🔍 ADVANCED_LOG: Column {column_name} not found in pg_attribute for table {table_name}")
                 self.logger.warning(f"Column {column_name} not found in pg_attribute for table {table_name}")
                 return False
             
             attnum = attnum_row[0]
-            self.logger.debug(f"Found column attnum: {attnum} for {column_name}")
+            
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: Found attnum={attnum}")
             
             # Update the specific statistic based on column index - exact approach from generator
             if col_idx == 3:  # stanullfrac (null_frac)
                 update_query = '''
-                UPDATE pg_statistic SET stanullfrac = %s 
-                WHERE starelid = %s AND staattnum = %s AND stainherit = false
+                UPDATE pg_statistic SET stanullfrac = :value 
+                WHERE starelid = :table_oid AND staattnum = :attnum AND stainherit = false
                 '''
             elif col_idx == 5:  # stadistinct (n_distinct)
                 update_query = '''
-                UPDATE pg_statistic SET stadistinct = %s 
-                WHERE starelid = %s AND staattnum = %s AND stainherit = false
+                UPDATE pg_statistic SET stadistinct = :value 
+                WHERE starelid = :table_oid AND staattnum = :attnum AND stainherit = false
                 '''
-            elif col_idx == 21:  # stanumbers1 (statistical numbers)
+            elif col_idx == 16:  # stanumbers1 (statistical numbers)
                 update_query = '''
-                UPDATE pg_statistic SET stanumbers1 = %s 
-                WHERE starelid = %s AND staattnum = %s AND stainherit = false
+                UPDATE pg_statistic SET stanumbers1 = :value 
+                WHERE starelid = :table_oid AND staattnum = :attnum AND stainherit = false
                 '''
             else:
                 self.logger.warning(f"Unsupported column index: {col_idx}")
                 return False
             
-            self.logger.debug(f"Executing update query: {update_query} with params: {(value, table_oid, attnum)}")
-            session.execute(text(update_query), (value, table_oid, attnum))
+            # Execute the update query - check if it affects any rows
+            if ADVANCED_LOGGING:
+                self.logger.info(f"🔍 ADVANCED_LOG: ===== ABOUT TO EXECUTE UPDATE =====")
+                self.logger.info(f"🔍 ADVANCED_LOG: SQL query: {update_query}")
+                self.logger.info(f"🔍 ADVANCED_LOG: Parameters: value={value}, table_oid={table_oid}, attnum={attnum}")
+                self.logger.info(f"🔍 ADVANCED_LOG: Parameter types: value={type(value)}, table_oid={type(table_oid)}, attnum={type(attnum)}")
+                self.logger.info(f"🔍 ADVANCED_LOG: Parameter repr: value={repr(value)}, table_oid={repr(table_oid)}, attnum={repr(attnum)}")
             
-            self.logger.debug(f"Successfully updated pg_statistic for {table_name}.{column_name} column {col_idx} = {value}")
+            self.logger.debug(f"Executing update query for {table_name}.{column_name} col_idx={col_idx}")
+            self.logger.debug(f"Update parameters: value={value} (type: {type(value)}), table_oid={table_oid}, attnum={attnum}")
+            
+            # Log the actual SQL query being executed
+            self.logger.debug(f"SQL query: {update_query}")
+            
+            try:
+                result = session.execute(text(update_query), {"value": value, "table_oid": table_oid, "attnum": attnum})
+                if ADVANCED_LOGGING:
+                    self.logger.info(f"🔍 ADVANCED_LOG: ✅ UPDATE EXECUTED SUCCESSFULLY")
+                    self.logger.info(f"🔍 ADVANCED_LOG: Rows affected: {result.rowcount}")
+            except Exception as sql_error:
+                if ADVANCED_LOGGING:
+                    self.logger.error(f"🔍 ADVANCED_LOG: ❌ SQL EXECUTION FAILED")
+                    self.logger.error(f"🔍 ADVANCED_LOG: SQL Error: {sql_error}")
+                    self.logger.error(f"🔍 ADVANCED_LOG: SQL Error type: {type(sql_error)}")
+                    self.logger.error(f"🔍 ADVANCED_LOG: Failed query: {update_query}")
+                    self.logger.error(f"🔍 ADVANCED_LOG: Failed parameters: {(value, table_oid, attnum)}")
+                raise sql_error
+            
+            # If no rows were updated, we need to insert a new row
+            if result.rowcount == 0:
+                self.logger.debug(f"No existing row found, inserting new pg_statistic row for {table_name}.{column_name}")
+                self._insert_pg_statistic_row(session, table_oid, attnum, col_idx, value)
+            
+            # Skip successful update logs
             return True
             
         except Exception as e:
+            if ADVANCED_LOGGING:
+                self.logger.error(f"🔍 ADVANCED_LOG: ===== EXCEPTION IN _update_pg_statistic_column =====")
+                self.logger.error(f"🔍 ADVANCED_LOG: Exception: {str(e)}")
+                self.logger.error(f"🔍 ADVANCED_LOG: Exception type: {type(e)}")
+                self.logger.error(f"🔍 ADVANCED_LOG: Exception repr: {repr(e)}")
+                self.logger.error(f"🔍 ADVANCED_LOG: Input parameters were:")
+                self.logger.error(f"🔍 ADVANCED_LOG:   table_name={table_name}")
+                self.logger.error(f"🔍 ADVANCED_LOG:   column_name={column_name}")
+                self.logger.error(f"🔍 ADVANCED_LOG:   col_idx={col_idx}")
+                self.logger.error(f"🔍 ADVANCED_LOG:   value={value} (type: {type(value)})")
+                import traceback
+                self.logger.error(f"🔍 ADVANCED_LOG: Full traceback:")
+                self.logger.error(traceback.format_exc())
+            
             self.logger.error(f"Failed to update pg_statistic: {str(e)}")
             return False
     
@@ -1110,73 +1257,73 @@ class SchneiderAIStatsSource(StatsSource):
         """Apply AI-generated statistics to the database."""
         start_time = time.time()
         try:
-            self.logger.info(f"🚀 Starting AI statistics application for {self.name()}")
-            self.logger.info(f"Configuration: model={self.model}, temperature={self.temperature}, "
+            self.logger.info(f"Starting AI statistics application for {self.name()}")
+            self.logger.debug(f"Configuration: model={self.model}, temperature={self.temperature}, "
                            f"max_retries={self.max_retries}")
             
             # First clear all caches
             cache_start = time.time()
             self.clear_caches(session)
-            self.logger.debug(f"Cache clearing took {time.time() - cache_start:.2f} seconds")
+            # Skip cache timing logs
             
             # Get database schema information
             schema_start = time.time()
-            self.logger.info("📊 Gathering database schema information")
+            self.logger.info("Gathering database schema information")
             schema_info = self.get_database_schema_info(session)
             schema_time = time.time() - schema_start
-            self.logger.info(f"Schema analysis took {schema_time:.2f} seconds")
+            self.logger.debug(f"Schema analysis took {schema_time:.2f} seconds")
             
             if not schema_info:
-                self.logger.warning("❌ No schema information available, falling back to standard ANALYZE")
+                self.logger.warning("No schema information available, falling back to standard ANALYZE")
                 super().apply_statistics(session)
                 return
             
             # Get AI estimates
             ai_start = time.time()
-            self.logger.info("🤖 Requesting AI statistics estimation")
+            self.logger.info("Requesting AI statistics estimation")
             estimates = self.estimate_statistics_with_ai(schema_info)
             ai_time = time.time() - ai_start
-            self.logger.info(f"AI estimation took {ai_time:.2f} seconds")
+            self.logger.debug(f"AI estimation took {ai_time:.2f} seconds")
             
             if estimates:
                 # Apply AI estimates to pg_statistic
                 apply_start = time.time()
-                self.logger.info("📝 Applying AI estimates to pg_statistic")
+                self.logger.info("Applying AI estimates to pg_statistic")
                 success = self.apply_ai_statistics_to_pg(session, estimates)
                 apply_time = time.time() - apply_start
-                self.logger.info(f"Statistics application took {apply_time:.2f} seconds")
+                self.logger.debug(f"Statistics application took {apply_time:.2f} seconds")
                 
                 if success:
                     session.commit()
                     total_time = time.time() - start_time
-                    self.logger.info(f"✅ AI statistics applied successfully in {total_time:.2f} seconds total")
+                    self.logger.info(f"AI statistics applied successfully in {total_time:.2f} seconds total")
                 else:
-                    self.logger.warning("❌ Failed to apply AI statistics, falling back to ANALYZE")
+                    self.logger.warning("Failed to apply AI statistics, falling back to ANALYZE")
                     session.rollback()
                     fallback_start = time.time()
                     super().apply_statistics(session)
                     fallback_time = time.time() - fallback_start
-                    self.logger.info(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
+                    self.logger.debug(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
             else:
-                self.logger.warning("❌ No AI estimates available, falling back to standard ANALYZE")
+                self.logger.warning("No AI estimates available, falling back to standard ANALYZE")
                 fallback_start = time.time()
                 super().apply_statistics(session)
                 fallback_time = time.time() - fallback_start
-                self.logger.info(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
+                self.logger.debug(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
             
             total_time = time.time() - start_time
-            self.logger.info(f"🏁 Statistics application for {self.name()} completed in {total_time:.2f} seconds")
+            self.logger.info(f"Statistics application for {self.name()} completed in {total_time:.2f} seconds")
             
         except Exception as e:
-            self.logger.error(f"💥 Failed to apply AI statistics: {str(e)}")
+            self.logger.error(f"Failed to apply AI statistics: {str(e)}")
             self.logger.debug("Exception details:", exc_info=True)
             session.rollback()
             # Fall back to standard statistics
-            self.logger.info("🔄 Falling back to standard PostgreSQL statistics")
+            self.logger.info("Falling back to standard PostgreSQL statistics")
             fallback_start = time.time()
             super().apply_statistics(session)
             fallback_time = time.time() - fallback_start
-            self.logger.info(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
+            self.logger.debug(f"Fallback ANALYZE took {fallback_time:.2f} seconds")
     
     def name(self) -> str:
         """Return the name of this statistics source."""
@@ -1198,8 +1345,7 @@ class SchneiderAIStatsSource(StatsSource):
             sample_values = [row[0] for row in result.fetchall()]
             
             if sample_values:
-                self.logger.debug(f"Collected {len(sample_values)} sample values for {table_name}.{column_name}: "
-                                f"{sample_values[:3]}..." if len(sample_values) > 3 else f"{sample_values}")
+                self.logger.debug(f"Collected {len(sample_values)} sample values for {table_name}.{column_name}")
             
             return sample_values
         except Exception as e:
@@ -1272,7 +1418,7 @@ class SchneiderAIStatsSource(StatsSource):
         Validate and sanitize AI-generated estimates.
         Matches validation approach from generator with proper bounds checking.
         """
-        self.logger.info(f"Starting validation of estimates for {len(estimates)} tables")
+        self.logger.debug(f"Starting validation of estimates for {len(estimates)} tables")
         validated = {}
         total_estimates = 0
         total_validated = 0
@@ -1284,11 +1430,11 @@ class SchneiderAIStatsSource(StatsSource):
             
             table_info = schema_info['tables'][table_name]
             validated[table_name] = {}
-            self.logger.debug(f"Validating {len(table_estimates)} column estimates for table {table_name}")
+            # Skip per-table validation logs
             
             for column_name, column_stats in table_estimates.items():
                 total_estimates += 1
-                self.logger.debug(f"Validating column {table_name}.{column_name} with stats: {column_stats}")
+                # Skip per-column validation logs
                 
                 # Find the column in schema
                 column_info = None

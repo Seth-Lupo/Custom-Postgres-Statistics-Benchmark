@@ -19,9 +19,9 @@ epsilon: 0.1
 
 # PostgreSQL Statistics Configuration
 target_columns:
-  stanullfrac: 3    # null fraction column index
-  stadistinct: 5    # distinct values column index  
-  stanumbers1: 21   # statistical numbers array column index
+  stanullfrac: 3    # null fraction column index (position 3 in pg_statistic)
+  stadistinct: 5    # distinct values column index (position 5 in pg_statistic)
+  stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic, NOT 21!)
 
 # Prompts - Updated for better CSV compatibility
 system_prompt: "You make predictions about pg_stats tables for postgres databases. You will always make a guess and never guess randomly. You will always output a semicolon, never comma, separated csv with no other information but the csv. Please do not guess NULL for the list columns unless very necessary, please always generate a pg_stats table and never the raw data."
