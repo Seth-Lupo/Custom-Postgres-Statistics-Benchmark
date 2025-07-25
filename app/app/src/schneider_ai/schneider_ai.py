@@ -68,12 +68,8 @@ class SchneiderAIStatsSource(StatsSource):
                 'DO NOT COPY THIS AND ALWAYS GENERATE PG_STATS.')
         }
         
-        # Column mappings for pg_statistic table
-        self.target_columns = self.config.get_data('target_columns', {
-            'stanullfrac': 3,    # Maps to pg_stats.null_frac
-            'stadistinct': 5,    # Maps to pg_stats.n_distinct
-            'stanumbers1': 16    # Maps to pg_stats.most_common_freqs/correlation
-        })
+        # Note: Column mappings are now handled automatically by the stakind system
+        # in the fixed StatsTranslator
         
         # Initialize modules (will be created per execution with proper session)
         self.ai_handler = None
@@ -175,8 +171,8 @@ class SchneiderAIStatsSource(StatsSource):
         # PG Stats Processor
         self.stats_processor = PGStatsProcessor(schema_info, self.logger)
         
-        # Stats Translator
-        self.translator = StatsTranslator(session, self.target_columns, self.logger)
+        # Stats Translator (fixed version that handles stakind system properly)
+        self.translator = StatsTranslator(session, self.logger)
         
         # PostgreSQL Inserter
         self.inserter = PostgresInserter(session, self.logger, ADVANCED_LOGGING)
@@ -343,7 +339,7 @@ class SchneiderAIStatsSource(StatsSource):
     
     def name(self) -> str:
         """Return the name of this statistics source."""
-        return "Schneider AI Statistics Estimator (Modular)"
+        return "Schneider AI Statistics Estimator (Fixed)"
     
     def get_pg_statistic_rows(self, session: Session) -> List[Tuple]:
         """Gets all the rows of pg_statistic that belong to the public namespace."""

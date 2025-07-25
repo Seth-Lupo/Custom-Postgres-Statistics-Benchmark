@@ -1,20 +1,19 @@
 """
-PostgreSQL Inserter Module - FIXED VERSION
+PostgreSQL Inserter Module
 
-This module handles inserting complete pg_statistic rows into PostgreSQL.
+This module handles inserting pg_statistic data into PostgreSQL.
 
-Input: pandas DataFrame with complete pg_statistic rows
+Input: pandas DataFrame with pg_statistic format
 """
 
 import pandas as pd
-import numpy as np
 import logging
 from typing import Dict, Any, List, Optional
 from sqlalchemy import text
 from sqlmodel import Session
 
 class PostgresInserter:
-    """Handles inserting complete pg_statistic rows into PostgreSQL."""
+    """Handles inserting statistics into PostgreSQL pg_statistic table."""
     
     def __init__(self, session: Session, logger: logging.Logger, advanced_logging: bool = False):
         """
@@ -31,10 +30,10 @@ class PostgresInserter:
     
     def insert_statistics(self, pg_statistic_df: pd.DataFrame) -> Dict[str, int]:
         """
-        Insert complete pg_statistic rows into PostgreSQL.
+        Insert statistics into pg_statistic table.
         
         Args:
-            pg_statistic_df: DataFrame with complete pg_statistic rows
+            pg_statistic_df: DataFrame with pg_statistic format
             
         Returns:
             Dictionary with counts of successful inserts/updates and failures
@@ -43,7 +42,7 @@ class PostgresInserter:
             self.logger.warning("Empty DataFrame provided for insertion")
             return {'updated': 0, 'inserted': 0, 'failed': 0}
         
-        self.logger.info(f"Inserting {len(pg_statistic_df)} complete pg_statistic rows")
+        self.logger.info(f"Inserting {len(pg_statistic_df)} statistics into pg_statistic")
         
         counts = {
             'updated': 0,
@@ -51,10 +50,10 @@ class PostgresInserter:
             'failed': 0
         }
         
-        # Process each complete row
+        # Process each statistic entry
         for idx, row in pg_statistic_df.iterrows():
             try:
-                success = self._insert_or_update_complete_row(row)
+                success = self._insert_or_update_statistic(row)
                 if success == 'updated':
                     counts['updated'] += 1
                 elif success == 'inserted':
@@ -77,63 +76,70 @@ class PostgresInserter:
         
         return counts
     
-    def _insert_or_update_complete_row(self, stat_row: pd.Series) -> str:
+    def _insert_or_update_statistic(self, stat_row: pd.Series) -> str:
         """
-        Insert or update a complete pg_statistic row.
+        Insert or update a single statistic entry.
         
         Returns:
             'updated', 'inserted', or 'failed'
         """
         table_oid = stat_row['starelid']
         attnum = stat_row['staattnum']
+        stat_column = stat_row['stat_column']
+        stat_value = stat_row['stat_value']
+        stat_type = stat_row.get('stat_type', 'unknown')
         
         if self.advanced_logging:
-            self.logger.info(f"🔍 ADVANCED_LOG: Processing complete row for "
+            self.logger.info(f"🔍 ADVANCED_LOG: Processing {stat_type} for "
                            f"{stat_row.get('table_name', 'unknown')}.{stat_row.get('column_name', 'unknown')}")
-            self.logger.info(f"🔍 ADVANCED_LOG: OID={table_oid}, attnum={attnum}")
+            self.logger.info(f"🔍 ADVANCED_LOG: OID={table_oid}, attnum={attnum}, "
+                           f"column={stat_column}, value={stat_value}")
         
-        # Try to update existing row first
-        if self._update_complete_row(stat_row):
+        # Try to update first
+        if self._update_statistic(table_oid, attnum, stat_column, stat_value):
             return 'updated'
         
         # If no rows updated, insert new row
-        if self._insert_complete_row(stat_row):
+        if self._insert_statistic(table_oid, attnum, stat_column, stat_value):
             return 'inserted'
         
         return 'failed'
     
-    def _update_complete_row(self, stat_row: pd.Series) -> bool:
-        """Update existing pg_statistic row with complete data."""
+    def _update_statistic(self, table_oid: int, attnum: int, 
+                         stat_column: int, stat_value: Any) -> bool:
+        """Update existing statistic."""
         try:
-            table_oid = stat_row['starelid']
-            attnum = stat_row['staattnum']
+            # Build column name from index
+            column_map = {
+                3: 'stanullfrac',
+                5: 'stadistinct',
+                16: 'stanumbers1'
+            }
             
-            # Build complete update query
-            update_query = """
-            UPDATE pg_statistic SET
-                stainherit = :stainherit,
-                stanullfrac = :stanullfrac,
-                stawidth = :stawidth,
-                stadistinct = :stadistinct,
-                stakind1 = :stakind1, stakind2 = :stakind2, stakind3 = :stakind3, stakind4 = :stakind4, stakind5 = :stakind5,
-                staop1 = :staop1, staop2 = :staop2, staop3 = :staop3, staop4 = :staop4, staop5 = :staop5,
-                stacoll1 = :stacoll1, stacoll2 = :stacoll2, stacoll3 = :stacoll3, stacoll4 = :stacoll4, stacoll5 = :stacoll5,
-                stanumbers1 = :stanumbers1, stanumbers2 = :stanumbers2, stanumbers3 = :stanumbers3, stanumbers4 = :stanumbers4, stanumbers5 = :stanumbers5,
-                stavalues1 = :stavalues1, stavalues2 = :stavalues2, stavalues3 = :stavalues3, stavalues4 = :stavalues4, stavalues5 = :stavalues5
-            WHERE starelid = :starelid AND staattnum = :staattnum AND stainherit = false
+            if stat_column not in column_map:
+                self.logger.warning(f"Unsupported column index: {stat_column}")
+                return False
+            
+            column_name = column_map[stat_column]
+            
+            # Build update query
+            update_query = f"""
+            UPDATE pg_statistic 
+            SET {column_name} = :value 
+            WHERE starelid = :table_oid 
+            AND staattnum = :attnum 
+            AND stainherit = false
             """
             
-            # Prepare parameters
-            params = self._prepare_row_params(stat_row)
-            
             if self.advanced_logging:
-                self.logger.info(f"🔍 ADVANCED_LOG: UPDATE query with {len(params)} parameters")
-                # Log key parameters
-                key_params = {k: v for k, v in params.items() 
-                            if k in ['starelid', 'staattnum', 'stanullfrac', 'stadistinct', 'stakind1', 'stakind2', 'stakind3']}
-                self.logger.info(f"🔍 ADVANCED_LOG: Key parameters: {key_params}")
+                self.logger.info(f"🔍 ADVANCED_LOG: UPDATE query: {update_query}")
+                self.logger.info(f"🔍 ADVANCED_LOG: Parameters: value={stat_value}, "
+                               f"table_oid={table_oid}, attnum={attnum}")
             
-            result = self.session.execute(text(update_query), params)
+            result = self.session.execute(
+                text(update_query),
+                {"value": stat_value, "table_oid": table_oid, "attnum": attnum}
+            )
             
             if result.rowcount > 0:
                 if self.advanced_logging:
@@ -147,15 +153,32 @@ class PostgresInserter:
         except Exception as e:
             if self.advanced_logging:
                 self.logger.error(f"🔍 ADVANCED_LOG: ❌ Update failed: {str(e)}")
-            self.logger.error(f"Failed to update pg_statistic row: {str(e)}")
-            # Rollback this transaction to prevent cascade failures
-            self.session.rollback()
+            self.logger.error(f"Failed to update statistic: {str(e)}")
             return False
     
-    def _insert_complete_row(self, stat_row: pd.Series) -> bool:
-        """Insert new complete pg_statistic row."""
+    def _insert_statistic(self, table_oid: int, attnum: int,
+                         stat_column: int, stat_value: Any) -> bool:
+        """Insert new statistic row."""
         try:
-            # Complete insert query
+            # Prepare default values
+            values = {
+                'table_oid': table_oid,
+                'attnum': attnum,
+                'stanullfrac': 0.0,
+                'stawidth': 4,
+                'stadistinct': 0.0,
+                'stanumbers1': None
+            }
+            
+            # Set the specific statistic value
+            if stat_column == 3:
+                values['stanullfrac'] = stat_value
+            elif stat_column == 5:
+                values['stadistinct'] = stat_value
+            elif stat_column == 16:
+                values['stanumbers1'] = stat_value
+            
+            # Insert query
             insert_query = """
             INSERT INTO pg_statistic (
                 starelid, staattnum, stainherit, stanullfrac, stawidth, stadistinct,
@@ -165,25 +188,20 @@ class PostgresInserter:
                 stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
                 stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
             ) VALUES (
-                :starelid, :staattnum, :stainherit, :stanullfrac, :stawidth, :stadistinct,
-                :stakind1, :stakind2, :stakind3, :stakind4, :stakind5,
-                :staop1, :staop2, :staop3, :staop4, :staop5,
-                :stacoll1, :stacoll2, :stacoll3, :stacoll4, :stacoll5,
-                :stanumbers1, :stanumbers2, :stanumbers3, :stanumbers4, :stanumbers5,
-                :stavalues1, :stavalues2, :stavalues3, :stavalues4, :stavalues5
+                :table_oid, :attnum, false, :stanullfrac, :stawidth, :stadistinct,
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                :stanumbers1, NULL, NULL, NULL, NULL,
+                NULL, NULL, NULL, NULL, NULL
             )
             """
             
-            # Prepare parameters
-            params = self._prepare_row_params(stat_row)
-            
             if self.advanced_logging:
-                self.logger.info(f"🔍 ADVANCED_LOG: INSERT query with {len(params)} parameters")
-                # Log stakind values to see what statistics we're inserting
-                stakind_params = {k: v for k, v in params.items() if k.startswith('stakind') and v > 0}
-                self.logger.info(f"🔍 ADVANCED_LOG: Active stakind values: {stakind_params}")
+                self.logger.info(f"🔍 ADVANCED_LOG: INSERT query executed")
+                self.logger.info(f"🔍 ADVANCED_LOG: Parameters: {values}")
             
-            self.session.execute(text(insert_query), params)
+            self.session.execute(text(insert_query), values)
             
             if self.advanced_logging:
                 self.logger.info(f"🔍 ADVANCED_LOG: ✅ Insert successful")
@@ -193,73 +211,8 @@ class PostgresInserter:
         except Exception as e:
             if self.advanced_logging:
                 self.logger.error(f"🔍 ADVANCED_LOG: ❌ Insert failed: {str(e)}")
-            self.logger.error(f"Failed to insert pg_statistic row: {str(e)}")
-            # Rollback this transaction to prevent cascade failures
-            self.session.rollback()
+            self.logger.error(f"Failed to insert statistic: {str(e)}")
             return False
-    
-    def _prepare_row_params(self, stat_row: pd.Series) -> Dict[str, Any]:
-        """Prepare parameters for SQL query from DataFrame row."""
-        # Convert pandas Series to dict and handle NaN values
-        params = {}
-        
-        # Required fields
-        params['starelid'] = int(stat_row['starelid'])
-        params['staattnum'] = int(stat_row['staattnum'])
-        params['stainherit'] = bool(stat_row['stainherit'])
-        
-        # Simple statistics
-        params['stanullfrac'] = float(stat_row.get('stanullfrac', 0.0))
-        params['stawidth'] = int(stat_row.get('stawidth', 4))
-        params['stadistinct'] = float(stat_row.get('stadistinct', 0.0))
-        
-        # Complex statistics arrays (stakind, staop, stacoll)
-        for i in range(1, 6):
-            params[f'stakind{i}'] = int(stat_row.get(f'stakind{i}', 0))
-            params[f'staop{i}'] = int(stat_row.get(f'staop{i}', 0))
-            params[f'stacoll{i}'] = int(stat_row.get(f'stacoll{i}', 0))
-            
-            # Handle array values (stanumbers, stavalues)
-            stanumbers = stat_row.get(f'stanumbers{i}')
-            if stanumbers is None or self._is_null_value(stanumbers):
-                params[f'stanumbers{i}'] = None
-            else:
-                params[f'stanumbers{i}'] = stanumbers
-            
-            stavalues = stat_row.get(f'stavalues{i}')
-            if stavalues is None or self._is_null_value(stavalues):
-                params[f'stavalues{i}'] = None
-            else:
-                params[f'stavalues{i}'] = stavalues
-        
-        return params
-    
-    def _is_null_value(self, value) -> bool:
-        """
-        Check if a value should be treated as NULL, handling arrays safely.
-        
-        Args:
-            value: The value to check
-            
-        Returns:
-            True if the value should be treated as NULL
-        """
-        if value is None:
-            return True
-        
-        # For scalar values, use pandas isna
-        if not isinstance(value, (list, tuple, np.ndarray)):
-            try:
-                return pd.isna(value)
-            except (ValueError, TypeError):
-                return False
-        
-        # For arrays/lists, check if it's an empty array or all elements are null
-        if len(value) == 0:
-            return True
-        
-        # Arrays with content are not null
-        return False
     
     def clear_statistics_for_tables(self, table_names: List[str]) -> int:
         """
@@ -328,11 +281,12 @@ class PostgresInserter:
         for idx, row in pg_statistic_df.iterrows():
             table_oid = row['starelid']
             attnum = row['staattnum']
+            stat_column = row['stat_column']
+            expected_value = row['stat_value']
             
-            # Query to check if statistic exists with expected stakind values
+            # Query to check if statistic exists
             check_query = """
-            SELECT stakind1, stakind2, stakind3, stakind4, stakind5,
-                   stanullfrac, stadistinct
+            SELECT stanullfrac, stadistinct, stanumbers1
             FROM pg_statistic
             WHERE starelid = :table_oid
             AND staattnum = :attnum
@@ -346,12 +300,17 @@ class PostgresInserter:
             stat_row = result.fetchone()
             
             if stat_row:
-                # Check if any of our expected stakind values are present
-                expected_stakind = [row.get(f'stakind{i}', 0) for i in range(1, 6)]
-                actual_stakind = list(stat_row[:5])  # First 5 columns are stakind values
+                # Check specific column value
+                if stat_column == 3:  # stanullfrac
+                    actual_value = stat_row[0]
+                elif stat_column == 5:  # stadistinct
+                    actual_value = stat_row[1]
+                elif stat_column == 16:  # stanumbers1
+                    actual_value = stat_row[2]
+                else:
+                    actual_value = None
                 
-                # Verify at least some statistics match
-                if any(e > 0 and e == a for e, a in zip(expected_stakind, actual_stakind)):
+                if actual_value is not None:
                     verified += 1
                 else:
                     missing += 1
