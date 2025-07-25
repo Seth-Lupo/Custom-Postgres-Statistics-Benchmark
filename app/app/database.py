@@ -9,119 +9,35 @@ from .logging_config import setup_logger
 # Configure a logger for the database module
 db_logger = setup_logger('database')
 
-# Database URLs
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@postgres:5432/experiment")
+# Database URLs - PostgreSQL is now only used for experiment execution
 ADMIN_DATABASE_URL = os.getenv("ADMIN_DATABASE_URL", "postgresql+psycopg2://postgres:postgres@postgres/postgres")
 
-# Create SQLAlchemy engines
-engine = create_engine(DATABASE_URL)
+# Create SQLAlchemy engine for admin operations (creating/dropping experiment databases)
 admin_engine = create_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
 
-# Create sessionmakers
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
-def wait_for_db():
-    """Wait for database to be ready."""
+def wait_for_postgres():
+    """Wait for PostgreSQL to be ready for experiment execution."""
     max_retries = 30
     retry_interval = 2
 
     for i in range(max_retries):
         try:
-            with engine.connect() as conn:
+            with admin_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            print("Database connection established!")
+            print("PostgreSQL connection established for experiment execution!")
             return True
         except Exception as e:
             if i < max_retries - 1:
-                print(f"Database not ready yet (attempt {i + 1}/{max_retries}). Retrying in {retry_interval} seconds...")
+                print(f"PostgreSQL not ready yet (attempt {i + 1}/{max_retries}). Retrying in {retry_interval} seconds...")
                 time.sleep(retry_interval)
             else:
-                print(f"Failed to connect to database after {max_retries} attempts: {e}")
+                print(f"Failed to connect to PostgreSQL after {max_retries} attempts: {e}")
                 raise
 
-def get_db():
-    """Get database session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# Initialize database connection
+# Initialize PostgreSQL connection for experiment execution
 def init_db():
-    wait_for_db()
-
-def create_db_and_tables():
-    """Create database tables."""
-    with engine.begin() as conn:
-        SQLModel.metadata.create_all(conn)
-        
-    # Run any pending migrations
-    run_migrations()
-
-def run_migrations():
-    """Run database migrations."""
-    db_logger.info("Running database migrations...")
-    
-    try:
-        with engine.begin() as conn:
-            # Check if document table exists
-            result = conn.execute(text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_schema = 'public' 
-                    AND table_name = 'document'
-                );
-            """))
-            
-            document_table_exists = result.scalar()
-            
-            if not document_table_exists:
-                db_logger.info("Creating document table...")
-                
-                # Create document table manually to ensure all columns are present
-                conn.execute(text("""
-                    CREATE TABLE document (
-                        id SERIAL PRIMARY KEY,
-                        experiment_id INTEGER NOT NULL REFERENCES experiment(id) ON DELETE CASCADE,
-                        name VARCHAR(200) NOT NULL,
-                        filename VARCHAR(200) NOT NULL,
-                        content_type VARCHAR(100) NOT NULL,
-                        document_type VARCHAR(50) NOT NULL,
-                        content TEXT NOT NULL,
-                        size_bytes INTEGER DEFAULT 0,
-                        source VARCHAR(200),
-                        extra_metadata TEXT,
-                        created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
-                    );
-                """))
-                
-                # Create indexes for better performance
-                conn.execute(text("CREATE INDEX idx_document_experiment_id ON document(experiment_id);"))
-                conn.execute(text("CREATE INDEX idx_document_type ON document(document_type);"))
-                conn.execute(text("CREATE INDEX idx_document_created_at ON document(created_at);"))
-                
-                db_logger.info("Document table created successfully with indexes")
-            else:
-                db_logger.info("Document table already exists, skipping creation")
-                
-        db_logger.info("Migrations completed successfully")
-        
-    except Exception as e:
-        db_logger.error(f"Error running migrations: {e}")
-        raise
-
-def get_session():
-    """Dependency to get database session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    """Initialize PostgreSQL for experiment execution only."""
+    wait_for_postgres()
 
 def get_db_session(db_name: str):
     """Get a session for a specific database."""

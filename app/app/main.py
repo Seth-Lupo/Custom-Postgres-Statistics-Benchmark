@@ -3,7 +3,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from .database import create_db_and_tables, init_db, get_db
+from .database import init_db
+from .database_sqlite import init_sqlite_db, get_sqlite_db
 from .routers import upload, run, results, document_routes
 from sqlmodel import select, Session
 from .models import Experiment
@@ -20,8 +21,8 @@ templates = Jinja2Templates(directory="app/templates")
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    init_db()
-    create_db_and_tables()
+    init_db()  # Initialize PostgreSQL for experiment execution
+    init_sqlite_db()  # Initialize SQLite for app metadata
     yield
     # Shutdown
     pass
@@ -61,7 +62,7 @@ def readme(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
-def root(request: Request, db: Session = Depends(get_db)):
+def root(request: Request, db: Session = Depends(get_sqlite_db)):
     """Home page with navigation and status information."""
     # Get experiment count using session
     result = db.execute(select(Experiment))

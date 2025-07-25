@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlmodel import Session, select
-from ..database import get_db
+from ..database_sqlite import get_sqlite_db as get_db
 from ..models import Experiment, Trial
 from ..logging_config import web_logger
 import plotly.graph_objects as go

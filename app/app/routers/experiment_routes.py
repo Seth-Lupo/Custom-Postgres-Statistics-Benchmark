@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import select, Session
 from datetime import datetime
 
-from ..database import get_db, SessionLocal
+from ..database_sqlite import get_sqlite_db as get_db, SQLiteSessionLocal as SessionLocal
 from ..experiment import ExperimentRunner, ExperimentError
 from ..logging_config import web_logger
 from ..models import Experiment as ExperimentModel

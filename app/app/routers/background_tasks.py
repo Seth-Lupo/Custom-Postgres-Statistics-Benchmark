@@ -18,7 +18,7 @@ Created: 2024
 from datetime import datetime
 from sqlmodel import Session
 
-from ..database import SessionLocal
+from ..database_sqlite import SQLiteSessionLocal as SessionLocal
 from ..experiment import ExperimentRunner, ExperimentError
 from ..logging_config import web_logger, stats_source_logger
 

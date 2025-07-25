@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
 from typing import Optional, List
-from ..database import get_db
+from ..database_sqlite import get_sqlite_db as get_db
 from ..models import Experiment, Document
 from ..logging_config import web_logger
 
@@ -263,7 +263,7 @@ def save_api_response_as_document(
     
     try:
         if session is None:
-            from ..database import SessionLocal
+            from ..database_sqlite import SQLiteSessionLocal as SessionLocal
             session = SessionLocal()
             should_close_session = True
         
