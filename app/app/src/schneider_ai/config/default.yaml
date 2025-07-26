@@ -1,13 +1,13 @@
 name: default
-description: "Schneider AI statistics estimation configuration"
+description: "Schneider AI statistics estimation using OpenAI"
 
-# Provider Configuration - can be "llmproxy" or "openai"
-provider: "llmproxy"
-model: "us.anthropic.claude-3-haiku-20240307-v1:0"
+# Provider Configuration - using OpenAI instead of LLM proxy
+provider: "openai"
+model: "gpt-4o"
 temperature: 0.3
 session_id: "schneider_stats_session"
 
-# RAG Settings
+# RAG Settings (not used with OpenAI)
 rag_usage: false
 rag_threshold: 0.5
 rag_k: 0
@@ -20,9 +20,9 @@ epsilon: 0.1
 target_columns:
   stanullfrac: 3    # null fraction column index (position 3 in pg_statistic)
   stadistinct: 5    # distinct values column index (position 5 in pg_statistic)
-  stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic, NOT 21!)
+  stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic)
 
-# Prompts - Updated for better CSV compatibility
+# Prompts - Optimized for OpenAI models
 system_prompt: "You make predictions about pg_stats tables for postgres databases. You will always make a guess and never guess randomly. You will always output a semicolon, never comma, separated csv with no other information but the csv. Please do not guess NULL for the list columns unless very necessary, please always generate a pg_stats table and never the raw data."
 
 estimation_prompt: |
@@ -48,7 +48,7 @@ estimation_prompt: |
   This ranges from -1 to +1. When the value is near -1 or +1, an index scan on the column will be estimated to be cheaper than when it is near zero, 
   due to reduction of random access to the disk. (This column is null if the column data type does not have a < operator.) 
   The column names in the database are {col_names}. The total size of the database is {size}. 
-  Please do not use elipses in your histogram predictions and make guesses whenever possible based on patterns in this style of database, 
+  Please do not use ellipses in your histogram predictions and make guesses whenever possible based on patterns in this style of database, 
   do not guess randomly. This dataset {sample_data}. Record your answer in csv format. 
   DO NOT COPY THIS AND ALWAYS GENERATE PG_STATS.
 
