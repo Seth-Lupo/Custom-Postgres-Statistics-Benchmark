@@ -211,10 +211,9 @@ class PostgresInserterFixed:
                 else:
                     update_parts.append(f"{stanumbers_field} = NULL")
                 
-                # stavalues - Due to PostgreSQL limitations, we cannot update anyarray columns
-                # with typed arrays. Skip updating stavalues fields.
-                # This still allows us to update important statistics like null fraction,
-                # average width, distinct count, and stakind values.
+                # stavalues - Keep NULL for now, will try to update separately
+                stavalues_field = f'stavalues{i}'
+                update_parts.append(f"{stavalues_field} = NULL")
             
             # Build complete query with WHERE clause
             update_query = f"""
@@ -232,7 +231,24 @@ class PostgresInserterFixed:
             
             if result.rowcount > 0:
                 if self.advanced_logging:
-                    self.logger.info(f"✅ Updated {result.rowcount} rows")
+                    self.logger.info(f"✅ Updated {result.rowcount} rows (basic stats)")
+                
+                # Now try to update stavalues fields separately
+                anyarray_success = 0
+                for i in range(1, 6):
+                    stavalues_field = f'stavalues{i}'
+                    stavalues_value = stat_row.get(stavalues_field)
+                    if self._is_valid_array(stavalues_value) and column_type:
+                        if self._try_update_anyarray_field(
+                            table_oid, attnum, stavalues_field, stavalues_value, column_type, i
+                        ):
+                            anyarray_success += 1
+                            if self.advanced_logging:
+                                self.logger.info(f"✅ Updated {stavalues_field} anyarray")
+                
+                if anyarray_success > 0:
+                    self.logger.info(f"🎉 Successfully updated {anyarray_success} anyarray fields!")
+                
                 return True
             else:
                 if self.advanced_logging:
@@ -709,7 +725,7 @@ class PostgresInserterFixed:
         # Execute using session's execute to maintain transaction consistency
         return self.session.execute(text(final_query))
     
-    def _make_pg_array_literal(self, values: List[Any], array_type: str) -> str:
+    def _make_pg_array_literal(self, values: List[Any], array_type: str, column_type: str = None) -> str:
         """Create a PostgreSQL array literal string."""
         if not values:
             return 'NULL'
@@ -721,15 +737,23 @@ class PostgresInserterFixed:
             elif array_type == 'float':
                 parts.append(str(float(v)))
             elif array_type == 'any':
-                # For anyarray, check if numeric or text
-                try:
-                    # Try to convert to number
-                    float(v)
-                    parts.append(str(v))
-                except:
-                    # Text value - escape quotes
-                    escaped = str(v).replace("'", "''")
-                    parts.append(f"'{escaped}'")
+                # For anyarray, check if numeric or text based on column type
+                if column_type and ('int' in column_type.lower()):
+                    # Integer type - convert float strings to int
+                    try:
+                        parts.append(str(int(float(v))))
+                    except:
+                        escaped = str(v).replace("'", "''")
+                        parts.append(f"'{escaped}'")
+                else:
+                    try:
+                        # Try to convert to number
+                        float(v)
+                        parts.append(str(v))
+                    except:
+                        # Text value - escape quotes
+                        escaped = str(v).replace("'", "''")
+                        parts.append(f"'{escaped}'")
             else:
                 # Default text handling
                 escaped = str(v).replace("'", "''")
@@ -915,3 +939,149 @@ class PostgresInserterFixed:
         
         self.session.commit()
         self.logger.info(f"✅ Autovacuum re-enabled for {len(table_names)} tables")
+    
+    def _try_update_anyarray_field(self, table_oid: int, attnum: int, field_name: str, 
+                                   values: List[Any], column_type: str, slot_num: int) -> bool:
+        """Try to update a single anyarray field using various techniques."""
+        if self.advanced_logging:
+            self.logger.info(f"🎯 Attempting anyarray update for {field_name} with values: {values[:3]}...")
+        
+        try:
+            # Get type OID information
+            type_query = """
+            SELECT t.oid, t.typelem, t.typname
+            FROM pg_attribute a
+            JOIN pg_type t ON a.atttypid = t.oid
+            WHERE a.attrelid = :table_oid AND a.attnum = :attnum
+            """
+            result = self.session.execute(text(type_query), {
+                "table_oid": table_oid,
+                "attnum": attnum
+            })
+            type_info = result.fetchone()
+            
+            if not type_info:
+                if self.advanced_logging:
+                    self.logger.warning(f"⚠️ No type info found for OID={table_oid}, attnum={attnum}")
+                return False
+            
+            type_oid, elem_oid, type_name = type_info
+            
+            # If elem_oid is None or 0, try to get array element type differently
+            if not elem_oid or elem_oid == 0:
+                # For base types, we need to find the array type's element
+                array_type_query = """
+                SELECT t.oid, t.typelem 
+                FROM pg_type t 
+                WHERE t.typname = :array_type_name
+                """
+                array_type_name = type_name + '[]' if not type_name.endswith('[]') else type_name
+                result = self.session.execute(text(array_type_query), {"array_type_name": array_type_name})
+                array_info = result.fetchone()
+                if array_info and array_info[1]:
+                    elem_oid = array_info[1]
+                else:
+                    # Fallback: assume it's the base type OID
+                    elem_oid = type_oid
+            
+            # Method 1: Try array_in with element type OID
+            if self.advanced_logging:
+                self.logger.info(f"🔧 Method 1: Trying array_in with elem_oid={elem_oid}")
+            
+            array_text = self._to_pg_array_text(values, elem_oid)
+            
+            update_query = f"""
+            UPDATE pg_statistic 
+            SET {field_name} = array_in('{array_text}', {elem_oid}, -1)
+            WHERE starelid = {table_oid} AND staattnum = {attnum} AND stainherit = false
+            """
+            
+            try:
+                result = self.session.execute(text(update_query))
+                if result.rowcount > 0:
+                    if self.advanced_logging:
+                        self.logger.info(f"✅ Method 1 SUCCESS: array_in worked!")
+                    return True
+            except Exception as e:
+                if self.advanced_logging:
+                    self.logger.warning(f"❌ Method 1 failed: {str(e)}")
+            
+            # Method 2: Try with explicit cast through text
+            if self.advanced_logging:
+                self.logger.info(f"🔧 Method 2: Trying explicit cast to array type")
+            
+            array_type = self._get_array_cast_type(column_type, slot_num, 0)
+            array_literal = self._make_pg_array_literal(values, 'any', column_type)
+            
+            update_query = f"""
+            UPDATE pg_statistic 
+            SET {field_name} = {array_literal}::{array_type}
+            WHERE starelid = {table_oid} AND staattnum = {attnum} AND stainherit = false
+            """
+            
+            try:
+                result = self.session.execute(text(update_query))
+                if result.rowcount > 0:
+                    if self.advanced_logging:
+                        self.logger.info(f"✅ Method 2 SUCCESS: Cast to {array_type} worked!")
+                    return True
+            except Exception as e:
+                if self.advanced_logging:
+                    self.logger.warning(f"❌ Method 2 failed: {str(e)}")
+            
+            # Method 3: Try string_to_array for simple types
+            if 'int' in column_type.lower() or 'numeric' in column_type.lower():
+                if self.advanced_logging:
+                    self.logger.info(f"🔧 Method 3: Trying string_to_array for numeric type")
+                
+                values_str = ','.join(str(v) for v in values if v is not None)
+                
+                update_query = f"""
+                UPDATE pg_statistic 
+                SET {field_name} = string_to_array('{values_str}', ',')::{array_type}
+                WHERE starelid = {table_oid} AND staattnum = {attnum} AND stainherit = false
+                """
+                
+                try:
+                    result = self.session.execute(text(update_query))
+                    if result.rowcount > 0:
+                        if self.advanced_logging:
+                            self.logger.info(f"✅ Method 3 SUCCESS: string_to_array worked!")
+                        return True
+                except Exception as e:
+                    if self.advanced_logging:
+                        self.logger.warning(f"❌ Method 3 failed: {str(e)}")
+            
+            return False
+            
+        except Exception as e:
+            if self.advanced_logging:
+                self.logger.error(f"Failed to update anyarray field {field_name}: {str(e)}")
+            # Try to recover from transaction error
+            try:
+                self.session.rollback()
+                self.session.begin()
+            except:
+                pass
+            return False
+    
+    def _to_pg_array_text(self, values: List[Any], elem_type_oid: int = None) -> str:
+        """Convert values to PostgreSQL array text format for array_in."""
+        parts = []
+        for v in values:
+            if v is None:
+                parts.append('NULL')
+            else:
+                # Convert based on element type OID
+                if elem_type_oid in [20, 21, 23]:  # bigint, int2, int4
+                    # Convert float strings to integers
+                    try:
+                        int_val = int(float(str(v)))
+                        parts.append(str(int_val))
+                    except:
+                        parts.append(f'"{str(v)}"')
+                else:
+                    # Escape backslashes and quotes for text types
+                    s = str(v).replace('\\', '\\\\').replace('"', '\\"')
+                    parts.append(f'"{s}"')
+        return '{' + ','.join(parts) + '}'
