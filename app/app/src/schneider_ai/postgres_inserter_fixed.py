@@ -242,7 +242,6 @@ class PostgresInserterFixed:
         except Exception as e:
             if self.advanced_logging:
                 self.logger.error(f"❌ Update failed: {str(e)}")
-                self.logger.error(f"🔍 Failed params: {params}")
             self.logger.error(f"Failed to update pg_statistic row: {str(e)}")
             self.session.rollback()
             return False
@@ -769,3 +768,150 @@ class PostgresInserterFixed:
                     final_query = final_query.replace(param_pattern, f"'{escaped}'")
         
         return final_query
+    
+    def create_empty_statistics_for_table(self, table_name: str) -> int:
+        """Create empty pg_statistic rows for all columns in a table without analyzing real data."""
+        try:
+            # Get table OID and column information
+            table_info_query = """
+            SELECT c.oid as table_oid, a.attnum, a.attname, a.atttypid
+            FROM pg_class c
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            JOIN pg_attribute a ON a.attrelid = c.oid
+            WHERE c.relname = :table_name 
+            AND n.nspname = 'public'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            ORDER BY a.attnum
+            """
+            
+            result = self.session.execute(text(table_info_query), {"table_name": table_name})
+            columns = result.fetchall()
+            
+            if not columns:
+                self.logger.warning(f"No columns found for table {table_name}")
+                return 0
+            
+            rows_created = 0
+            # Insert minimal empty statistics for each column
+            for col in columns:
+                try:
+                    table_oid, attnum, attname, atttypid = col
+                    
+                    # Check if statistics row already exists
+                    check_query = """
+                    SELECT COUNT(*) FROM pg_statistic 
+                    WHERE starelid = :table_oid AND staattnum = :attnum AND stainherit = false
+                    """
+                    result = self.session.execute(text(check_query), {
+                        "table_oid": table_oid,
+                        "attnum": attnum
+                    })
+                    exists = result.scalar() > 0
+                    
+                    if exists:
+                        if self.advanced_logging:
+                            self.logger.debug(f"Statistics row already exists for {table_name}.{attname}")
+                        continue
+                    
+                    # Create minimal empty statistics row (no ON CONFLICT for system catalogs)
+                    insert_query = """
+                    INSERT INTO pg_statistic (
+                        starelid, staattnum, stainherit, stanullfrac, stawidth, stadistinct,
+                        stakind1, stakind2, stakind3, stakind4, stakind5,
+                        staop1, staop2, staop3, staop4, staop5,
+                        stacoll1, stacoll2, stacoll3, stacoll4, stacoll5,
+                        stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
+                        stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
+                    ) VALUES (
+                        :table_oid, :attnum, false, 0.0, 4, 0.0,
+                        0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0,
+                        NULL, NULL, NULL, NULL, NULL,
+                        NULL, NULL, NULL, NULL, NULL
+                    )
+                    """
+                    
+                    self.session.execute(text(insert_query), {
+                        "table_oid": table_oid,
+                        "attnum": attnum
+                    })
+                    rows_created += 1
+                    
+                    if self.advanced_logging:
+                        self.logger.debug(f"Created empty statistics for {table_name}.{attname}")
+                        
+                except Exception as col_error:
+                    self.logger.warning(f"Failed to create empty statistics for {table_name}.{attname}: {str(col_error)}")
+                    # Continue with other columns instead of failing completely
+                    continue
+            
+            if self.advanced_logging:
+                self.logger.info(f"✅ Created {rows_created} empty statistics rows for {table_name}")
+            
+            return rows_created
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to create empty statistics for {table_name}: {str(e)}")
+            # Don't raise - return 0 so the process can continue
+            return 0
+    
+    def disable_autovacuum_for_tables(self, table_names: List[str]) -> None:
+        """Disable autovacuum for specific tables to prevent automatic ANALYZE."""
+        if not table_names:
+            return
+        
+        successful_disables = 0
+        for table_name in table_names:
+            try:
+                # Disable autovacuum for this table (autovacuum_analyze_enabled doesn't exist)
+                disable_query = f"""
+                ALTER TABLE "{table_name}" SET (
+                    autovacuum_enabled = false
+                )
+                """
+                self.session.execute(text(disable_query))
+                successful_disables += 1
+                
+                if self.advanced_logging:
+                    self.logger.info(f"🚫 Disabled autovacuum for {table_name}")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to disable autovacuum for {table_name}: {str(e)}")
+                # Don't let one failure stop the others - commit what we have so far
+                try:
+                    self.session.commit()
+                except:
+                    self.session.rollback()
+        
+        try:
+            self.session.commit()
+            self.logger.info(f"🚫 Autovacuum disabled for {successful_disables}/{len(table_names)} tables")
+        except Exception as e:
+            self.logger.error(f"Failed to commit autovacuum changes: {str(e)}")
+            self.session.rollback()
+    
+    def re_enable_autovacuum_for_tables(self, table_names: List[str]) -> None:
+        """Re-enable autovacuum for specific tables."""
+        if not table_names:
+            return
+            
+        for table_name in table_names:
+            try:
+                # Re-enable autovacuum
+                enable_query = f"""
+                ALTER TABLE "{table_name}" RESET (
+                    autovacuum_enabled
+                )
+                """
+                self.session.execute(text(enable_query))
+                
+                if self.advanced_logging:
+                    self.logger.info(f"✅ Re-enabled autovacuum for {table_name}")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to re-enable autovacuum for {table_name}: {str(e)}")
+        
+        self.session.commit()
+        self.logger.info(f"✅ Autovacuum re-enabled for {len(table_names)} tables")

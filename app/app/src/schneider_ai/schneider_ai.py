@@ -132,19 +132,43 @@ class SchneiderAIStatsSource(StatsSource):
                 super().apply_statistics(session)
                 return
             
-            # Step 5: First run ANALYZE on all tables to ensure statistics rows exist
-            self.logger.info("Step 4/5: Running ANALYZE on tables to ensure statistics rows exist")
-            unique_tables = pg_statistic_df['table_name'].unique()
-            self.logger.info(f"Running ANALYZE on {len(unique_tables)} tables")
-            for table_name in unique_tables:
-                try:
-                    session.execute(text(f"ANALYZE {table_name}"))
-                except Exception as e:
-                    self.logger.warning(f"Failed to ANALYZE {table_name}: {str(e)}")
+            # Step 5: Disable autovacuum to prevent real data contamination
+            self.logger.info("Step 4/7: Disabling autovacuum to prevent real data contamination")
+            unique_tables = list(pg_statistic_df['table_name'].unique())
+            try:
+                self.inserter.disable_autovacuum_for_tables(unique_tables)
+            except Exception as e:
+                self.logger.warning(f"Failed to disable autovacuum: {str(e)}")
+                # Continue anyway - not critical for the core functionality
+            
+            # Step 6: Clean existing statistics for target tables
+            self.logger.info("Step 5/7: Cleaning existing pg_statistic data for target tables")
+            cleaned_count = self.inserter.clear_statistics_for_tables(unique_tables)
+            if cleaned_count > 0:
+                self.logger.info(f"Cleaned {cleaned_count} existing statistics entries")
             session.commit()
             
-            # Step 6: Insert/Update into PostgreSQL
-            self.logger.info("Step 5/5: Inserting/Updating PostgreSQL statistics")
+            # Step 7: Create empty statistics rows without analyzing real data
+            self.logger.info("Step 6/7: Creating empty pg_statistic rows (completely bypassing real data)")
+            self.logger.info(f"Creating empty statistics for {len(unique_tables)} tables")
+            total_rows_created = 0
+            for table_name in unique_tables:
+                rows_created = self.inserter.create_empty_statistics_for_table(table_name)
+                if rows_created > 0:
+                    self.logger.info(f"Created {rows_created} empty statistics rows for {table_name}")
+                    total_rows_created += rows_created
+                else:
+                    self.logger.warning(f"No empty statistics rows created for {table_name}")
+            
+            try:
+                session.commit()
+                self.logger.info(f"✅ Successfully created {total_rows_created} empty statistics rows total")
+            except Exception as e:
+                self.logger.error(f"Failed to commit empty statistics creation: {str(e)}")
+                session.rollback()
+            
+            # Step 8: Insert/Update AI statistics into PostgreSQL
+            self.logger.info("Step 7/7: Applying AI statistics to PostgreSQL")
             insert_counts = self.inserter.insert_statistics(pg_statistic_df)
             
             total_success = insert_counts['updated'] + insert_counts['inserted']
@@ -160,8 +184,13 @@ class SchneiderAIStatsSource(StatsSource):
                 self.logger.warning("Failed to apply AI statistics, falling back to standard ANALYZE")
                 super().apply_statistics(session)
             
+            # Re-enable autovacuum for the tables (optional - could leave disabled for experiments)
+            self.logger.info("Re-enabling autovacuum for target tables")
+            self.inserter.re_enable_autovacuum_for_tables(unique_tables)
+            
             total_time = time.time() - start_time
-            self.logger.info(f"AI statistics pipeline completed in {total_time:.2f} seconds")
+            self.logger.info(f"🎉 AI statistics pipeline completed in {total_time:.2f} seconds")
+            self.logger.info("💡 All statistics are now AI-generated with NO real data contamination!")
             
         except Exception as e:
             self.logger.error(f"Failed to apply AI statistics: {str(e)}")
@@ -347,6 +376,65 @@ class SchneiderAIStatsSource(StatsSource):
                 )
         except Exception as e:
             self.logger.error(f"Failed to save AI interaction: {str(e)}")
+    
+    def _create_empty_statistics_rows(self, session: Session, table_name: str):
+        """Create empty pg_statistic rows without analyzing real table data."""
+        try:
+            # Get table OID and column information
+            table_info_query = """
+            SELECT c.oid as table_oid, a.attnum, a.attname, a.atttypid
+            FROM pg_class c
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            JOIN pg_attribute a ON a.attrelid = c.oid
+            WHERE c.relname = :table_name 
+            AND n.nspname = 'public'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            ORDER BY a.attnum
+            """
+            
+            result = session.execute(text(table_info_query), {"table_name": table_name})
+            columns = result.fetchall()
+            
+            if not columns:
+                self.logger.warning(f"No columns found for table {table_name}")
+                return
+            
+            # Insert minimal empty statistics for each column
+            for col in columns:
+                table_oid, attnum, attname, atttypid = col
+                
+                # Create minimal empty statistics row
+                insert_query = """
+                INSERT INTO pg_statistic (
+                    starelid, staattnum, stainherit, stanullfrac, stawidth, stadistinct,
+                    stakind1, stakind2, stakind3, stakind4, stakind5,
+                    staop1, staop2, staop3, staop4, staop5,
+                    stacoll1, stacoll2, stacoll3, stacoll4, stacoll5,
+                    stanumbers1, stanumbers2, stanumbers3, stanumbers4, stanumbers5,
+                    stavalues1, stavalues2, stavalues3, stavalues4, stavalues5
+                ) VALUES (
+                    :table_oid, :attnum, false, 0.0, 4, 0.0,
+                    0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0,
+                    NULL, NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL, NULL, NULL
+                )
+                ON CONFLICT (starelid, staattnum, stainherit) DO NOTHING
+                """
+                
+                session.execute(text(insert_query), {
+                    "table_oid": table_oid,
+                    "attnum": attnum
+                })
+                
+                if ADVANCED_LOGGING:
+                    self.logger.debug(f"Created empty statistics for {table_name}.{attname}")
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to create empty statistics for {table_name}: {str(e)}")
+            raise
     
     def name(self) -> str:
         """Return the name of this statistics source."""

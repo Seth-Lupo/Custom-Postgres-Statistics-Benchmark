@@ -23,34 +23,55 @@ target_columns:
   stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic, NOT 21!)
 
 # Prompts - Updated for better CSV compatibility
-system_prompt: "You make predictions about pg_stats tables for postgres databases. You will always make a guess and never guess randomly. You will always output a semicolon, never comma, separated csv with no other information but the csv. Please do not guess NULL for the list columns unless very necessary, please always generate a pg_stats table and never the raw data."
+system_prompt: "You are a PostgreSQL statistics expert. Generate realistic pg_stats data based on database schema and sample data. Always output semicolon-separated CSV format with accurate data types and realistic statistical values. Make intelligent estimates based on column types and sample data patterns."
 
 estimation_prompt: |
-  I have a postgres sql database that I want you to estimate the pg_stats for. 
-  PLEASE MAKE SURE THAT THE CSVS ARE SEMICOLON SEPARATED AND NOT COMMA SEPARATED. 
-  The column names and descriptions for pg_stats are: 
-  attname name (references pg_attribute.attname): Name of column described by this row, 
-  null_frac float4: Fraction of column entries that are null 
-  avg_width int4 Average width in bytes of columns entries 
-  n_distinct float4 If greater than zero, the estimated number of distinct values in the column. 
-  If less than zero, the negative of the number of distinct values divided by the number of rows. 
-  (The negated form is used when ANALYZE believes that the number of distinct values is likely to increase as the table grows; 
-  the positive form is used when the column seems to have a fixed number of possible values.) 
-  For example, -1 indicates a unique column in which the number of distinct values is the same as the number of rows. 
-  most_common_vals anyarray A list of the most common values in the column. 
-  (Null if no values seem to be more common than any others.) 
-  most_common_freqs float4[] A list of the frequencies of the most common values, 
-  i.e., number of occurrences of each divided by total number of rows. (Null when most_common_vals is.) 
-  histogram_bounds anyarray A list of values that divide the columns values into groups of approximately equal population. 
-  The values in most_common_vals, if present, are omitted from this histogram calculation. 
-  (This column is null if the column data type does not have a < operator or if the most_common_vals list accounts for the entire population.) 
-  correlation float4 Statistical correlation between physical row ordering and logical ordering of the column values. 
-  This ranges from -1 to +1. When the value is near -1 or +1, an index scan on the column will be estimated to be cheaper than when it is near zero, 
-  due to reduction of random access to the disk. (This column is null if the column data type does not have a < operator.) 
-  The column names in the database are {col_names}. The total size of the database is {size}. 
-  Please do not use elipses in your histogram predictions and make guesses whenever possible based on patterns in this style of database, 
-  do not guess randomly. This dataset {sample_data}. Record your answer in csv format. 
-  DO NOT COPY THIS AND ALWAYS GENERATE PG_STATS.
+  Generate realistic PostgreSQL pg_stats for this database. Output ONLY semicolon-separated CSV.
+  
+  Database info: {size} total size, {col_names} columns
+  Sample data: {sample_data}
+  
+  CSV columns (semicolon-separated):
+  attname;null_frac;avg_width;n_distinct;most_common_vals;most_common_freqs;histogram_bounds;correlation
+  
+  GUIDELINES FOR REALISTIC VALUES:
+  
+  null_frac: 0.0-1.0 (e.g., 0.0, 0.1, 0.05)
+  avg_width: Realistic byte sizes
+    - integers: 4 bytes
+    - text: 8-50 bytes depending on content
+    - timestamps: 8 bytes
+    - decimals: 8 bytes
+  
+  n_distinct: 
+    - Primary keys: -1.0 (unique)
+    - Foreign keys: positive number (e.g., 5.0, 100.0)
+    - Enums/categories: small positive (e.g., 3.0, 7.0)
+    - High cardinality: negative fraction (e.g., -0.8, -0.5)
+  
+  most_common_vals: Arrays matching column data type
+    - integers: {1,2,3,4,5}
+    - text: {"Alice","Bob","Charlie","David","Eve"}
+    - Use realistic values based on column name/type
+  
+  most_common_freqs: {0.2,0.15,0.1,0.08,0.05} (must sum < 1.0)
+  
+  histogram_bounds: Ordered values covering range
+    - integers: {1,10,25,50,100}
+    - text: {"A","F","M","S","Z"}
+    - dates: {"2020-01-01","2021-01-01","2022-01-01"}
+  
+  correlation: -1.0 to 1.0
+    - Sequential IDs: 1.0
+    - Random data: ~0.0
+    - Reverse order: -1.0
+  
+  EXAMPLE OUTPUT:
+  attname;null_frac;avg_width;n_distinct;most_common_vals;most_common_freqs;histogram_bounds;correlation
+  id;0.0;4;-1.0;{1,2,3,4,5};{0.2,0.2,0.2,0.2,0.2};{1,25,50,75,100};1.0
+  name;0.0;12;-0.8;{"John","Jane","Bob","Alice","Carol"};{0.15,0.12,0.1,0.08,0.05};{"Adams","Johnson","Smith","Williams","Wilson"};0.1
+  
+  Generate realistic data for ALL columns. NO explanatory text, ONLY the CSV.
 
 # Validation Settings
 accuracy_threshold: 80.0
