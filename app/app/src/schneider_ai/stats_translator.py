@@ -107,6 +107,10 @@ class StatsTranslator:
         This properly organizes statistics using the stakind system.
         """
         # Start with base row structure
+        n_distinct_value = stats_row.get('n_distinct', 0.0)
+        if n_distinct_value != 0.0:
+            self.logger.info(f"📊 n_distinct for {table_name}.{column_name}: {n_distinct_value}")
+        
         pg_stat_row = {
             'starelid': table_oid,
             'staattnum': attnum,
@@ -115,7 +119,7 @@ class StatsTranslator:
             # Simple statistics (always present)
             'stanullfrac': float(stats_row.get('null_frac', 0.0)),
             'stawidth': int(stats_row.get('avg_width', 4)),
-            'stadistinct': float(stats_row.get('n_distinct', 0.0)),
+            'stadistinct': float(n_distinct_value),
             
             # Complex statistics arrays (up to 5 slots)
             'stakind1': 0, 'stakind2': 0, 'stakind3': 0, 'stakind4': 0, 'stakind5': 0,

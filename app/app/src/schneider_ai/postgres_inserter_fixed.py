@@ -225,6 +225,10 @@ class PostgresInserterFixed:
             if self.advanced_logging:
                 self.logger.info(f"🔍 Executing direct SQL UPDATE")
                 self.logger.info(f"🔍 Update parts: {update_parts[:3]}...") # Show first few
+                # Log stadistinct specifically
+                for part in update_parts:
+                    if 'stadistinct' in part:
+                        self.logger.info(f"📊 stadistinct update: {part}")
             
             # Execute as raw SQL without parameters
             result = self.session.execute(text(update_query))
