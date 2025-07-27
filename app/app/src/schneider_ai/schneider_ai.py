@@ -11,7 +11,7 @@ from ..base import StatsSource, StatsSourceConfig, StatsSourceSettings
 from .ai_response_handler import AIResponseHandler
 from .pg_stats_processor import PGStatsProcessor
 from .stats_translator import StatsTranslator
-from .postgres_inserter import PostgresInserter
+from .postgres_inserter_fixed import PostgresInserterFixed
 
 # Advanced logging flag for debugging
 ADVANCED_LOGGING = True
@@ -132,8 +132,19 @@ class SchneiderAIStatsSource(StatsSource):
                 super().apply_statistics(session)
                 return
             
-            # Step 5: Insert into PostgreSQL
-            self.logger.info("Step 4/4: Inserting into PostgreSQL")
+            # Step 5: First run ANALYZE on all tables to ensure statistics rows exist
+            self.logger.info("Step 4/5: Running ANALYZE on tables to ensure statistics rows exist")
+            unique_tables = pg_statistic_df['table_name'].unique()
+            self.logger.info(f"Running ANALYZE on {len(unique_tables)} tables")
+            for table_name in unique_tables:
+                try:
+                    session.execute(text(f"ANALYZE {table_name}"))
+                except Exception as e:
+                    self.logger.warning(f"Failed to ANALYZE {table_name}: {str(e)}")
+            session.commit()
+            
+            # Step 6: Insert/Update into PostgreSQL
+            self.logger.info("Step 5/5: Inserting/Updating PostgreSQL statistics")
             insert_counts = self.inserter.insert_statistics(pg_statistic_df)
             
             total_success = insert_counts['updated'] + insert_counts['inserted']
@@ -174,8 +185,8 @@ class SchneiderAIStatsSource(StatsSource):
         # Stats Translator (fixed version that handles stakind system properly)
         self.translator = StatsTranslator(session, self.logger)
         
-        # PostgreSQL Inserter
-        self.inserter = PostgresInserter(session, self.logger, ADVANCED_LOGGING)
+        # PostgreSQL Inserter - Using enhanced type-safe version
+        self.inserter = PostgresInserterFixed(session, self.logger, ADVANCED_LOGGING)
     
     def get_database_schema_info(self, session: Session) -> Dict[str, Any]:
         """Get comprehensive database schema information for AI estimation."""
