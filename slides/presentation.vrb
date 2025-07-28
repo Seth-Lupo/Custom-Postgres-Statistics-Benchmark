@@ -1,0 +1,35 @@
+\frametitle{Implementation: Dynamic Prompt Formatting}
+\frametitle{How Schema Information is Injected}
+
+\begin{block}{Prompt Variables}
+\begin{itemize}
+    \item \textbf{\{col\_names\}}: Comma-separated list of all table.column pairs
+    \item \textbf{\{size\}}: Total database size (e.g., "1.2 GB")
+    \item \textbf{\{sample\_data\}}: JSON structure containing:
+    \begin{itemize}
+        \item Table row counts
+        \item Column types and nullability
+        \item Table sizes
+        \item Any available metadata/comments
+    \end{itemize}
+\end{itemize}
+\end{block}
+
+\begin{exampleblock}{Example Formatted Values}
+\begin{lstlisting}[language=Python, basicstyle=\tiny\ttfamily]
+col_names = "users.id, users.displayname, users.reputation,
+             posts.id, posts.title, posts.body, ..."
+size = "847 MB"
+sample_data = {
+  "users": {
+    "row_count": 2465713,
+    "table_size": "341 MB",
+    "columns": [
+      {"name": "id", "type": "integer", "nullable": false},
+      {"name": "reputation", "type": "integer", "nullable": false}
+    ]
+  }
+}
+\end{lstlisting}
+\end{exampleblock}
+
