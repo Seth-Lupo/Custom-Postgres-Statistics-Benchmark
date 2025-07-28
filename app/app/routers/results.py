@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
-from sqlmodel import Session, select
-from ..database_sqlite import get_sqlite_db as get_db
+from sqlmodel import Session, select, SQLModel
+from ..database_sqlite import get_sqlite_db as get_db, sqlite_engine
 from ..models import Experiment, Trial
 from ..logging_config import web_logger
 import plotly.graph_objects as go
@@ -250,4 +250,26 @@ def get_trial_pg_statistic(experiment_id: int, trial_id: int, session: Session =
         
     except json.JSONDecodeError as e:
         web_logger.error(f"Failed to parse pg_statistic snapshot for trial {trial_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to parse statistics data") 
+        raise HTTPException(status_code=500, detail="Failed to parse statistics data")
+
+
+@router.post("/clean-database")
+def clean_database(session: Session = Depends(get_db)):
+    """Clean the entire SQLite database by dropping all tables and recreating them."""
+    try:
+        web_logger.warning("Cleaning SQLite database - dropping all tables")
+        
+        # Drop all tables
+        SQLModel.metadata.drop_all(sqlite_engine)
+        web_logger.info("All tables dropped successfully")
+        
+        # Recreate all tables
+        SQLModel.metadata.create_all(sqlite_engine)
+        web_logger.info("All tables recreated successfully")
+        
+        # Redirect back to results page
+        return RedirectResponse(url="/results", status_code=303)
+        
+    except Exception as e:
+        web_logger.error(f"Failed to clean database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clean database: {str(e)}") 

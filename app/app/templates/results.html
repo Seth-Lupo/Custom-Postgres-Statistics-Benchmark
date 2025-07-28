@@ -25,10 +25,16 @@
         <div class="card-header bg-white py-3">
             <div class="d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">All Experiments</h5>
-                <a href="/experiment" class="btn btn-primary btn-sm">
-                    <i class="bi bi-plus-lg me-1"></i>
-                    New Experiment
-                </a>
+                <div>
+                    <button type="button" class="btn btn-danger btn-sm me-2" onclick="confirmCleanDatabase()">
+                        <i class="bi bi-trash me-1"></i>
+                        Clean Database
+                    </button>
+                    <a href="/experiment" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus-lg me-1"></i>
+                        New Experiment
+                    </a>
+                </div>
             </div>
         </div>
         <div class="card-body p-0">
@@ -168,6 +174,18 @@ document.addEventListener('htmx:afterSwap', function(event) {
         showExperimentDetails(experimentId);
     }
 });
+
+// Function to confirm database cleaning
+function confirmCleanDatabase() {
+    if (confirm('Are you sure you want to clean the entire database? This will delete ALL experiments and cannot be undone!')) {
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/clean-database';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
 
 // Add hover effect to table rows
 document.addEventListener('DOMContentLoaded', function() {

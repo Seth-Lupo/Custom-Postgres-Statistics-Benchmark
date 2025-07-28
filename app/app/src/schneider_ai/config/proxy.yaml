@@ -23,55 +23,47 @@ target_columns:
   stanumbers1: 16   # statistical numbers array column index (position 16 in pg_statistic, NOT 21!)
 
 # Prompts - Updated for better CSV compatibility
-system_prompt: "You are a PostgreSQL statistics expert. Generate realistic pg_stats data based on database schema and sample data. Always output semicolon-separated CSV format with accurate data types and realistic statistical values. Make intelligent estimates based on column types and sample data patterns."
+system_prompt: "You are an expert PostgreSQL statistics estimator. You analyze database schemas and generate accurate pg_stats predictions. Always output semicolon-separated CSV format with no additional text. Base your estimates on common database patterns and the specific context provided. Never use random values."
 
 estimation_prompt: |
-  Generate realistic PostgreSQL pg_stats for this database. Output ONLY semicolon-separated CSV.
+  Generate PostgreSQL pg_stats estimates for the following database. Output ONLY semicolon-separated CSV.
   
-  Database info: {size} total size, {col_names} columns
-  Sample data: {sample_data}
+  CRITICAL REQUIREMENTS:
+  - Use semicolons (;) as separators, NOT commas
+  - Include all columns listed below
+  - Base estimates on the actual data patterns and column purposes
   
-  CSV columns (semicolon-separated):
-  attname;null_frac;avg_width;n_distinct;most_common_vals;most_common_freqs;histogram_bounds;correlation
+  Column definitions:
+  - attname: table.column name format
+  - null_frac: Fraction of NULL values (0.0-1.0)
+  - avg_width: Average width in bytes
+  - n_distinct: IMPORTANT - Follow these rules:
+    * Primary keys, unique columns: -1.0 (negative one)
+    * Foreign keys: Positive number matching referenced table size
+    * Boolean columns: 2 or 3 (for true/false/null)
+    * Status/enum columns: Small positive number (2-20)
+    * Text columns: Large positive number or negative fraction
+    * Timestamps: Large negative fraction (e.g., -0.9)
+    * Use negative values for columns that grow with table size
+  - most_common_vals: Array of most frequent values in brackets, e.g., [value1;value2;value3]
+  - most_common_freqs: Array of frequencies matching most_common_vals, e.g., [0.4;0.3;0.2]
+  - histogram_bounds: Array of values dividing data into equal buckets (exclude most_common_vals)
+  - correlation: IMPORTANT - Estimate based on:
+    * Primary keys with auto-increment: 0.99 to 1.0
+    * Timestamps (creation dates): 0.9 to 1.0
+    * Random UUIDs: -0.1 to 0.1
+    * Foreign keys: 0.0 to 0.5
+    * Status columns: -0.2 to 0.2
+    * Updated timestamps: 0.0 to 0.3
+    * Consider if data is likely inserted sequentially or randomly
   
-  GUIDELINES FOR REALISTIC VALUES:
+  Database context:
+  - Columns: {col_names}
+  - Database size: {size}
+  - Schema details: {sample_data}
   
-  null_frac: 0.0-1.0 (e.g., 0.0, 0.1, 0.05)
-  avg_width: Realistic byte sizes
-    - integers: 4 bytes
-    - text: 8-50 bytes depending on content
-    - timestamps: 8 bytes
-    - decimals: 8 bytes
-  
-  n_distinct: 
-    - Primary keys: -1.0 (unique)
-    - Foreign keys: positive number (e.g., 5.0, 100.0)
-    - Enums/categories: small positive (e.g., 3.0, 7.0)
-    - High cardinality: negative fraction (e.g., -0.8, -0.5)
-  
-  most_common_vals: Arrays matching column data type
-    - integers: {1,2,3,4,5}
-    - text: {"Alice","Bob","Charlie","David","Eve"}
-    - Use realistic values based on column name/type
-  
-  most_common_freqs: {0.2,0.15,0.1,0.08,0.05} (must sum < 1.0)
-  
-  histogram_bounds: Ordered values covering range
-    - integers: {1,10,25,50,100}
-    - text: {"A","F","M","S","Z"}
-    - dates: {"2020-01-01","2021-01-01","2022-01-01"}
-  
-  correlation: -1.0 to 1.0
-    - Sequential IDs: 1.0
-    - Random data: ~0.0
-    - Reverse order: -1.0
-  
-  EXAMPLE OUTPUT:
-  attname;null_frac;avg_width;n_distinct;most_common_vals;most_common_freqs;histogram_bounds;correlation
-  id;0.0;4;-1.0;{1,2,3,4,5};{0.2,0.2,0.2,0.2,0.2};{1,25,50,75,100};1.0
-  name;0.0;12;-0.8;{"John","Jane","Bob","Alice","Carol"};{0.15,0.12,0.1,0.08,0.05};{"Adams","Johnson","Smith","Williams","Wilson"};0.1
-  
-  Generate realistic data for ALL columns. NO explanatory text, ONLY the CSV.
+  Analyze the column names, types, and relationships to generate realistic statistics.
+  For n_distinct and correlation, consider the column's purpose and typical usage patterns.
 
 # Validation Settings
 accuracy_threshold: 80.0
