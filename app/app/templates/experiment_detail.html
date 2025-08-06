@@ -595,9 +595,8 @@
                         <p class="text-muted mt-2">Loading query plan...</p>
                     </div>
                     <div id="queryPlanContent" style="display: none;">
-                        <div id="queryPlanTree" class="bg-light p-3 rounded" style="max-height: 500px; overflow: auto;">
-                            <!-- Tree view will be populated dynamically -->
-                        </div>
+                        <iframe id="queryPlanFrame" style="width: 100%; height: 600px; border: 1px solid #dee2e6; border-radius: 0.375rem;">
+                        </iframe>
                     </div>
                     <div id="queryPlanError" style="display: none;">
                         <div class="alert alert-danger">
@@ -1353,91 +1352,48 @@ function showQueryPlan(experimentId, trialId) {
     const modal = new bootstrap.Modal(document.getElementById('queryPlanModal'));
     modal.show();
     
-    // Fetch data
-    const url = `/results/${experimentId}/trial/${trialId}/query_plan`;
-    fetch(url)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            currentQueryPlanData = data;
-            
+    // Set iframe source to the query plan viewer URL
+    const iframe = document.getElementById('queryPlanFrame');
+    const url = `/results/${experimentId}/trial/${trialId}/query_plan_viewer`;
+    
+    // Clear the iframe first
+    iframe.src = 'about:blank';
+    
+    // Set up iframe load handler
+    iframe.onload = function() {
+        if (iframe.src !== 'about:blank') {
             // Hide loading, show content
             document.getElementById('queryPlanLoadingSpinner').style.display = 'none';
             document.getElementById('queryPlanContent').style.display = 'block';
-            
+        }
+    };
+    
+    iframe.onerror = function() {
+        console.error('Error loading query plan viewer');
+        
+        // Hide loading, show error
+        document.getElementById('queryPlanLoadingSpinner').style.display = 'none';
+        document.getElementById('queryPlanError').style.display = 'block';
+        document.getElementById('queryPlanErrorMessage').textContent = 'Failed to load query plan viewer';
+    };
+    
+    // Load the iframe
+    iframe.src = url;
+    
+    // Also fetch the data for export functionality
+    fetch(`/results/${experimentId}/trial/${trialId}/query_plan`)
+        .then(response => response.json())
+        .then(data => {
+            currentQueryPlanData = data;
             // Update title
             document.getElementById('queryPlanModalTitle').textContent = data.title || 'Query Execution Plan';
-            
-            // Populate tree view
-            populateQueryPlanTree(data.data);
         })
         .catch(error => {
-            console.error('Error loading query plan:', error);
-            
-            // Hide loading, show error
-            document.getElementById('queryPlanLoadingSpinner').style.display = 'none';
-            document.getElementById('queryPlanError').style.display = 'block';
-            document.getElementById('queryPlanErrorMessage').textContent = 'Failed to load query plan: ' + error.message;
+            console.error('Error fetching query plan data:', error);
         });
 }
 
 
-function populateQueryPlanTree(planData) {
-    const treeContainer = document.getElementById('queryPlanTree');
-    
-    if (!planData || !planData.Plan) {
-        treeContainer.innerHTML = '<div class="text-muted">No query plan data available</div>';
-        return;
-    }
-    
-    const plan = planData.Plan;
-    const treeHtml = renderPlanNode(plan, 0);
-    treeContainer.innerHTML = treeHtml;
-}
-
-function renderPlanNode(node, depth) {
-    const indent = '  '.repeat(depth);
-    const cost = node['Total Cost'] ? ` (Cost: ${node['Total Cost'].toFixed(2)})` : '';
-    const rows = node['Plan Rows'] ? ` • Rows: ${node['Plan Rows']}` : '';
-    const width = node['Plan Width'] ? ` • Width: ${node['Plan Width']}` : '';
-    
-    let html = `<div class="mb-2" style="margin-left: ${depth * 20}px;">
-        <div class="fw-bold text-primary">
-            <i class="bi bi-arrow-right-circle me-1"></i>
-            ${node['Node Type']}${cost}
-        </div>`;
-    
-    if (rows || width) {
-        html += `<div class="text-muted small">${rows}${width}</div>`;
-    }
-    
-    if (node['Relation Name']) {
-        html += `<div class="text-success small">Table: ${node['Relation Name']}</div>`;
-    }
-    
-    if (node['Index Name']) {
-        html += `<div class="text-info small">Index: ${node['Index Name']}</div>`;
-    }
-    
-    if (node['Filter']) {
-        html += `<div class="text-warning small">Filter: ${node['Filter']}</div>`;
-    }
-    
-    html += '</div>';
-    
-    // Render child plans
-    if (node['Plans'] && node['Plans'].length > 0) {
-        for (const childPlan of node['Plans']) {
-            html += renderPlanNode(childPlan, depth + 1);
-        }
-    }
-    
-    return html;
-}
 
 function exportQueryPlan() {
     if (!currentQueryPlanData) return;

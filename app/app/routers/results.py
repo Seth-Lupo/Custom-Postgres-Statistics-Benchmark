@@ -281,6 +281,102 @@ def get_trial_query_plan(experiment_id: int, trial_id: int, session: Session = D
         raise HTTPException(status_code=500, detail="Failed to parse query plan data")
 
 
+@router.get("/results/{experiment_id}/trial/{trial_id}/query_plan_viewer", response_class=HTMLResponse)
+def query_plan_viewer(experiment_id: int, trial_id: int, request: Request, session: Session = Depends(get_db)):
+    """Display query plan in pev2 viewer."""
+    trial = session.query(Trial).filter(
+        Trial.id == trial_id, 
+        Trial.experiment_id == experiment_id
+    ).first()
+    
+    if not trial:
+        raise HTTPException(status_code=404, detail="Trial not found")
+    
+    # Get the experiment to access the query
+    experiment = session.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    
+    if not trial.query_plan:
+        return templates.TemplateResponse("query_plan_viewer.html", {
+            "request": request,
+            "plan": None,
+            "query": experiment.query,
+            "title": f"Query Plan - Trial {trial.run_index}"
+        })
+    
+    try:
+        query_plan_data = json.loads(trial.query_plan)
+        
+        # Convert JSON plan to text format for pev2
+        def json_plan_to_text(plan_json, indent=0):
+            """Convert JSON query plan to PostgreSQL EXPLAIN text format."""
+            if not plan_json or 'Plan' not in plan_json:
+                return ""
+            
+            plan = plan_json['Plan']
+            lines = []
+            
+            # Build the main line
+            node_type = plan.get('Node Type', 'Unknown')
+            
+            # Add relation name if present
+            if 'Relation Name' in plan:
+                node_type += f" on {plan['Relation Name']}"
+            elif 'Index Name' in plan:
+                node_type += f" using {plan['Index Name']}"
+            
+            # Add cost and rows
+            startup_cost = plan.get('Startup Cost', 0)
+            total_cost = plan.get('Total Cost', 0)
+            rows = plan.get('Plan Rows', 0)
+            width = plan.get('Plan Width', 0)
+            
+            main_line = f"{' ' * indent}{node_type}  (cost={startup_cost:.2f}..{total_cost:.2f} rows={rows} width={width})"
+            lines.append(main_line)
+            
+            # Add additional details
+            if 'Filter' in plan:
+                lines.append(f"{' ' * (indent + 2)}Filter: {plan['Filter']}")
+            if 'Index Cond' in plan:
+                lines.append(f"{' ' * (indent + 2)}Index Cond: {plan['Index Cond']}")
+            if 'Join Filter' in plan:
+                lines.append(f"{' ' * (indent + 2)}Join Filter: {plan['Join Filter']}")
+            
+            # Process child plans
+            if 'Plans' in plan:
+                for child_plan in plan['Plans']:
+                    child_json = {'Plan': child_plan}
+                    child_text = json_plan_to_text(child_json, indent + 2)
+                    if child_text:
+                        lines.append(child_text)
+            
+            return '\n'.join(lines)
+        
+        plan_text = json_plan_to_text(query_plan_data)
+        
+        # If conversion failed, try to use the raw JSON
+        if not plan_text:
+            plan_text = json.dumps(query_plan_data, indent=2)
+        
+        return templates.TemplateResponse("query_plan_viewer.html", {
+            "request": request,
+            "plan": plan_text,
+            "query": experiment.query,
+            "title": f"Query Plan - Trial {trial.run_index}"
+        })
+        
+    except json.JSONDecodeError as e:
+        web_logger.error(f"Failed to parse query plan for trial {trial_id}: {e}")
+        return templates.TemplateResponse("query_plan_viewer.html", {
+            "request": request,
+            "plan": None,
+            "query": experiment.query,
+            "title": f"Query Plan - Trial {trial.run_index}",
+            "error": "Failed to parse query plan data"
+        })
+
+
 @router.post("/clean-database")
 def clean_database(session: Session = Depends(get_db)):
     """Clean the entire SQLite database by dropping all tables and recreating them."""
