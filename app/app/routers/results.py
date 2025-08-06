@@ -253,6 +253,34 @@ def get_trial_pg_statistic(experiment_id: int, trial_id: int, session: Session =
         raise HTTPException(status_code=500, detail="Failed to parse statistics data")
 
 
+@router.get("/results/{experiment_id}/trial/{trial_id}/query_plan")
+def get_trial_query_plan(experiment_id: int, trial_id: int, session: Session = Depends(get_db)):
+    """Get query plan for a specific trial."""
+    trial = session.query(Trial).filter(
+        Trial.id == trial_id, 
+        Trial.experiment_id == experiment_id
+    ).first()
+    
+    if not trial:
+        raise HTTPException(status_code=404, detail="Trial not found")
+    
+    if not trial.query_plan:
+        return JSONResponse({"data": {}, "title": f"Query Plan - Trial {trial.run_index}", "message": "No query plan data available"})
+    
+    try:
+        query_plan_data = json.loads(trial.query_plan)
+        
+        return JSONResponse({
+            "data": query_plan_data,
+            "title": f"Query Plan - Trial {trial.run_index}",
+            "raw_json": trial.query_plan
+        })
+        
+    except json.JSONDecodeError as e:
+        web_logger.error(f"Failed to parse query plan for trial {trial_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse query plan data")
+
+
 @router.post("/clean-database")
 def clean_database(session: Session = Depends(get_db)):
     """Clean the entire SQLite database by dropping all tables and recreating them."""

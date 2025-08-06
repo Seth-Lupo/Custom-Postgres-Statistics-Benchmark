@@ -502,6 +502,12 @@
                                         <i class="bi bi-database me-1"></i>
                                         pg_statistic
                                     </button>
+                                    <button type="button" class="btn btn-outline-success btn-sm" 
+                                            onclick="showQueryPlan({{ experiment.id }}, {{ trial.id }})"
+                                            title="View query execution plan">
+                                        <i class="bi bi-diagram-3 me-1"></i>
+                                        Query Plan
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -564,6 +570,47 @@
                     <button type="button" class="btn btn-primary" onclick="exportStatistics()">
                         <i class="bi bi-download me-1"></i>
                         Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Query Plan Modal -->
+    <div class="modal fade" id="queryPlanModal" tabindex="-1" aria-labelledby="queryPlanModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="queryPlanModalLabel">
+                        <i class="bi bi-diagram-3 me-2"></i>
+                        <span id="queryPlanModalTitle">Query Execution Plan</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="queryPlanLoadingSpinner" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading query plan...</p>
+                    </div>
+                    <div id="queryPlanContent" style="display: none;">
+                        <div id="queryPlanTree" class="bg-light p-3 rounded" style="max-height: 500px; overflow: auto;">
+                            <!-- Tree view will be populated dynamically -->
+                        </div>
+                    </div>
+                    <div id="queryPlanError" style="display: none;">
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <span id="queryPlanErrorMessage">Failed to load query plan</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="exportQueryPlan()">
+                        <i class="bi bi-download me-1"></i>
+                        Export JSON
                     </button>
                 </div>
             </div>
@@ -1287,6 +1334,123 @@ function exportStatistics() {
     
     const title = document.getElementById('statisticsModalTitle').textContent;
     link.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Query Plan Modal Functions
+let currentQueryPlanData = null;
+
+function showQueryPlan(experimentId, trialId) {
+    // Show loading state
+    document.getElementById('queryPlanLoadingSpinner').style.display = 'block';
+    document.getElementById('queryPlanContent').style.display = 'none';
+    document.getElementById('queryPlanError').style.display = 'none';
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('queryPlanModal'));
+    modal.show();
+    
+    // Fetch data
+    const url = `/results/${experimentId}/trial/${trialId}/query_plan`;
+    fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            currentQueryPlanData = data;
+            
+            // Hide loading, show content
+            document.getElementById('queryPlanLoadingSpinner').style.display = 'none';
+            document.getElementById('queryPlanContent').style.display = 'block';
+            
+            // Update title
+            document.getElementById('queryPlanModalTitle').textContent = data.title || 'Query Execution Plan';
+            
+            // Populate tree view
+            populateQueryPlanTree(data.data);
+        })
+        .catch(error => {
+            console.error('Error loading query plan:', error);
+            
+            // Hide loading, show error
+            document.getElementById('queryPlanLoadingSpinner').style.display = 'none';
+            document.getElementById('queryPlanError').style.display = 'block';
+            document.getElementById('queryPlanErrorMessage').textContent = 'Failed to load query plan: ' + error.message;
+        });
+}
+
+
+function populateQueryPlanTree(planData) {
+    const treeContainer = document.getElementById('queryPlanTree');
+    
+    if (!planData || !planData.Plan) {
+        treeContainer.innerHTML = '<div class="text-muted">No query plan data available</div>';
+        return;
+    }
+    
+    const plan = planData.Plan;
+    const treeHtml = renderPlanNode(plan, 0);
+    treeContainer.innerHTML = treeHtml;
+}
+
+function renderPlanNode(node, depth) {
+    const indent = '  '.repeat(depth);
+    const cost = node['Total Cost'] ? ` (Cost: ${node['Total Cost'].toFixed(2)})` : '';
+    const rows = node['Plan Rows'] ? ` • Rows: ${node['Plan Rows']}` : '';
+    const width = node['Plan Width'] ? ` • Width: ${node['Plan Width']}` : '';
+    
+    let html = `<div class="mb-2" style="margin-left: ${depth * 20}px;">
+        <div class="fw-bold text-primary">
+            <i class="bi bi-arrow-right-circle me-1"></i>
+            ${node['Node Type']}${cost}
+        </div>`;
+    
+    if (rows || width) {
+        html += `<div class="text-muted small">${rows}${width}</div>`;
+    }
+    
+    if (node['Relation Name']) {
+        html += `<div class="text-success small">Table: ${node['Relation Name']}</div>`;
+    }
+    
+    if (node['Index Name']) {
+        html += `<div class="text-info small">Index: ${node['Index Name']}</div>`;
+    }
+    
+    if (node['Filter']) {
+        html += `<div class="text-warning small">Filter: ${node['Filter']}</div>`;
+    }
+    
+    html += '</div>';
+    
+    // Render child plans
+    if (node['Plans'] && node['Plans'].length > 0) {
+        for (const childPlan of node['Plans']) {
+            html += renderPlanNode(childPlan, depth + 1);
+        }
+    }
+    
+    return html;
+}
+
+function exportQueryPlan() {
+    if (!currentQueryPlanData) return;
+    
+    const jsonContent = currentQueryPlanData.raw_json || JSON.stringify(currentQueryPlanData.data, null, 2);
+    
+    // Create and download file
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    
+    const title = document.getElementById('queryPlanModalTitle').textContent;
+    link.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
     
     document.body.appendChild(link);
     link.click();

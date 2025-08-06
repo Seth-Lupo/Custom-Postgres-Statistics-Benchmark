@@ -1,4 +1,4 @@
-\documentclass{beamer}
+\documentclass[smaller]{beamer}
 
 % Theme and color
 \usetheme{Madrid}
@@ -12,6 +12,32 @@
 \usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{booktabs}
+
+% Font size adjustments
+\setbeamerfont{normal text}{size=\small}
+\setbeamerfont{frametitle}{size=\large}
+\setbeamerfont{title}{size=\Large}
+\setbeamerfont{subtitle}{size=\normalsize}
+\setbeamerfont{author}{size=\normalsize}
+\setbeamerfont{date}{size=\normalsize}
+\setbeamerfont{institute}{size=\small}
+
+% Reduce spacing
+\setbeamertemplate{itemize/enumerate body begin}{\small}
+\setbeamertemplate{itemize/enumerate subbody begin}{\footnotesize}
+
+% Reduce vertical spacing
+\setlength{\parskip}{0.3em}
+\setbeamertemplate{itemize items}[circle]
+\setbeamertemplate{enumerate items}[default]
+
+% More compact blocks
+\setbeamertemplate{blocks}[rounded][shadow=false]
+\setbeamerfont{block title}{size=\normalsize}
+\setbeamerfont{block body}{size=\small}
+
+% Reduce margins slightly
+\setbeamersize{text margin left=0.8cm, text margin right=0.8cm}
 
 % Define colors
 \definecolor{codegreen}{rgb}{0,0.6,0}
@@ -333,8 +359,7 @@ sample_data = {
     \item Binary format
     \item Type OIDs
     \item Complex encoding
-    \item Not human-interpretable
-    \item Example: \texttt{\textbackslash x0a1b2c3d...}
+    \item Less human-interpretable
 \end{itemize}
 \end{block}
 \end{column}
@@ -346,7 +371,6 @@ sample_data = {
     \item Clear column names
     \item Interpretable values
     \item JSON-friendly
-    \item Example: \texttt{\{1, 2, 3\}}
 \end{itemize}
 \end{block}
 \end{column}
@@ -387,15 +411,6 @@ These statistics provide the core information needed by PostgreSQL's query plann
 
 \begin{frame}{Statistics Intentionally Omitted}
 \frametitle{What We Don't Generate and Why}
-
-\begin{alertblock}{Correlation Statistics}
-\begin{itemize}
-    \item \textbf{correlation}: Physical vs logical ordering (-1 to 1)
-    \item Requires knowledge of actual data storage patterns
-    \item Not inferrable from schema information alone
-    \item Would require access to real data (violates privacy)
-\end{itemize}
-\end{alertblock}
 
 \begin{alertblock}{Array Statistics}
 \begin{itemize}
@@ -859,26 +874,6 @@ Error bars show one standard deviation from the mean. Red line indicates median 
 
 \end{frame}
 
-\begin{frame}{Statistical Insights from Variance Analysis}
-\frametitle{Comparing Method Reliability}
-
-\begin{block}{Performance Predictability}
-\begin{itemize}
-    \item Built-in method: \textbf{Lowest variance} (±0.0040s) - most predictable
-    \item LLM method: \textbf{Moderate variance} (±0.0175s) with competitive mean
-    \item Empty statistics: \textbf{Fastest mean} but higher variance (±0.0106s)
-\end{itemize}
-\end{block}
-
-\begin{block}{Implications for Production Use}
-\begin{itemize}
-    \item LLM approach provides good balance of performance and predictability
-    \item Variance is acceptable for most production workloads
-    \item Performance remains competitive with built-in statistics
-\end{itemize}
-\end{block}
-
-\end{frame}
 
 \begin{frame}{Cache Impact Analysis}
 \frametitle{Cold vs Warm Cache Performance}

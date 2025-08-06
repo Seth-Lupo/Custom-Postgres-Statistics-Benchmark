@@ -4,5 +4,5 @@
 \beamer@sectionintoc {4}{Experimental Setup}{19}{0}{4}
 \beamer@sectionintoc {5}{Baseline Methods}{22}{0}{5}
 \beamer@sectionintoc {6}{Results and Analysis}{24}{0}{6}
-\beamer@sectionintoc {7}{Discussion}{32}{0}{7}
-\beamer@sectionintoc {8}{Conclusions}{34}{0}{8}
+\beamer@sectionintoc {7}{Discussion}{31}{0}{7}
+\beamer@sectionintoc {8}{Conclusions}{33}{0}{8}

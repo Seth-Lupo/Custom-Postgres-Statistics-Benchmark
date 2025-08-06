@@ -43,6 +43,7 @@ class Trial(SQLModel, table=True):
     cost_estimate: Optional[float] = Field(default=None)
     pg_stats_snapshot: Optional[str] = Field(default=None)  # JSON string of pg_stats data
     pg_statistic_snapshot: Optional[str] = Field(default=None)  # JSON string of pg_statistic data
+    query_plan: Optional[str] = Field(default=None)  # JSON string of query plan data
     
     # Relationship to experiment
     experiment: Optional[Experiment] = Relationship(back_populates="trials")

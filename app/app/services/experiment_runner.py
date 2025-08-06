@@ -445,7 +445,7 @@ class ExperimentRunner:
                 # Record trial in database
                 self._record_trial_result(
                     session, experiment.id, i + 1, execution_time, cost_estimate,
-                    pg_stats_snapshot, pg_statistic_snapshot
+                    pg_stats_snapshot, pg_statistic_snapshot, query_plan
                 )
                 
                 result_msg = f"Trial {i + 1} completed: Time={execution_time:.4f}s, Cost={cost_estimate:.2f}"
@@ -478,15 +478,18 @@ class ExperimentRunner:
             
     def _record_trial_result(self, session: Session, experiment_id: int, run_index: int,
                            execution_time: float, cost_estimate: float,
-                           pg_stats_snapshot: str, pg_statistic_snapshot: str) -> None:
+                           pg_stats_snapshot: str, pg_statistic_snapshot: str, query_plan: Dict[str, Any]) -> None:
         """Record trial result in database."""
+        import json
+        
         trial = Trial(
             experiment_id=experiment_id,
             run_index=run_index,
             execution_time=execution_time,
             cost_estimate=cost_estimate,
             pg_stats_snapshot=pg_stats_snapshot,
-            pg_statistic_snapshot=pg_statistic_snapshot
+            pg_statistic_snapshot=pg_statistic_snapshot,
+            query_plan=json.dumps(query_plan, default=str, indent=2)
         )
         session.add(trial)
         session.commit()
